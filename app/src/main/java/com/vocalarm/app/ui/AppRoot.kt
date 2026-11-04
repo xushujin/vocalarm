@@ -5,6 +5,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -24,6 +25,7 @@ import com.vocalarm.app.ui.screens.AboutScreen
 import com.vocalarm.app.ui.screens.AlarmEditScreen
 import com.vocalarm.app.ui.screens.AlarmListScreen
 import com.vocalarm.app.ui.screens.AppearanceScreen
+import com.vocalarm.app.ui.neu.NeuScreenBackground
 import com.vocalarm.app.ui.theme.LocalPalette
 
 @Composable
@@ -32,7 +34,6 @@ fun AppRoot(
     requestedTab: String?,
     onRequestedTabConsumed: () -> Unit,
 ) {
-    val palette = LocalPalette.current
     var tab by rememberSaveable { mutableStateOf(Tab.Alarms) }
     var editorOpen by rememberSaveable { mutableStateOf(false) }
     var editingId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -49,43 +50,42 @@ fun AppRoot(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(palette.background),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
-        ) {
-            when (tab) {
-                Tab.Alarms -> AlarmListScreen(
-                    container = container,
-                    onEdit = { id ->
-                        editingId = id
-                        editorOpen = true
-                    },
-                    onOpenAppearance = { tab = Tab.Appearance },
-                )
+    NeuScreenBackground(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .statusBarsPadding(),
+            ) {
+                when (tab) {
+                    Tab.Alarms -> AlarmListScreen(
+                        container = container,
+                        onEdit = { id ->
+                            editingId = id
+                            editorOpen = true
+                        },
+                        onOpenAppearance = { tab = Tab.Appearance },
+                    )
 
-                Tab.Appearance -> AppearanceScreen(container)
-                Tab.About -> AboutScreen(container)
+                    Tab.Appearance -> AppearanceScreen(container)
+                    Tab.About -> AboutScreen(container)
+                }
             }
-        }
 
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 22.dp, vertical = 14.dp),
-        ) {
-            NeuTabBar(
-                tabs = Tab.entries.toList(),
-                selected = tab,
-                onSelect = { tab = it },
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 22.dp)
+                    .padding(top = 6.dp, bottom = 10.dp),
+            ) {
+                NeuTabBar(
+                    tabs = Tab.entries.toList(),
+                    selected = tab,
+                    onSelect = { tab = it },
+                )
+            }
         }
 
         AnimatedVisibility(

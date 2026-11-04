@@ -12,6 +12,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,12 +27,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -69,29 +72,34 @@ import com.vocalarm.app.domain.VoiceCatalog
 import com.vocalarm.app.domain.VoiceDescriptor
 import com.vocalarm.app.domain.VoiceGender
 import com.vocalarm.app.domain.VoicePreset
+import com.vocalarm.app.ui.Eyebrow
+import com.vocalarm.app.ui.MetaItem
 import com.vocalarm.app.ui.NeuDialog
 import com.vocalarm.app.ui.NeuProgressBar
-import com.vocalarm.app.ui.repeatText
+import com.vocalarm.app.ui.StatusPill
 import com.vocalarm.app.ui.formatDuration
 import com.vocalarm.app.ui.formatRate
-import com.vocalarm.app.ui.neu.VIcon
-import com.vocalarm.app.ui.neu.VIconImage
 import com.vocalarm.app.ui.neu.NeuButton
 import com.vocalarm.app.ui.neu.NeuCard
 import com.vocalarm.app.ui.neu.NeuChip
 import com.vocalarm.app.ui.neu.NeuDivider
 import com.vocalarm.app.ui.neu.NeuIconButton
+import com.vocalarm.app.ui.neu.NeuIconTile
 import com.vocalarm.app.ui.neu.NeuSlider
 import com.vocalarm.app.ui.neu.NeuSwitch
 import com.vocalarm.app.ui.neu.NeuTextField
-import com.vocalarm.app.ui.neu.NeuTone
 import com.vocalarm.app.ui.neu.TimeWheel
+import com.vocalarm.app.ui.neu.VIcon
+import com.vocalarm.app.ui.neu.VIconImage
 import com.vocalarm.app.ui.neu.neuSurface
+import com.vocalarm.app.ui.repeatText
 import com.vocalarm.app.ui.theme.LocalPalette
-import com.vocalarm.app.ui.vm.AlarmEditViewModel
+import com.vocalarm.app.ui.theme.TimeDisplayStyle
 import com.vocalarm.app.ui.vm.AlarmDraft
+import com.vocalarm.app.ui.vm.AlarmEditViewModel
 import com.vocalarm.app.ui.vm.rememberEditorViewModelStoreOwner
 import java.time.DayOfWeek
+import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
@@ -181,9 +189,8 @@ fun AlarmEditScreen(
     ) {
         Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
             EditorTopBar(
-                title = stringResource(
-                    if (viewModel.isNewAlarm) R.string.editor_title_new else R.string.editor_title_edit,
-                ),
+                isNew = viewModel.isNewAlarm,
+                timeText = String.format(Locale.ROOT, "%02d:%02d", draft.hour, draft.minute),
                 onClose = ::requestClose,
                 onSave = {
                     if (recording != null) viewModel.cancelRecording()
@@ -197,7 +204,11 @@ fun AlarmEditScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 item {
-                    TimeCard(draft = draft, onTimeChange = viewModel::setTime, onLabelChange = viewModel::setLabel)
+                    TimeCard(
+                        draft = draft,
+                        onTimeChange = viewModel::setTime,
+                        onLabelChange = viewModel::setLabel,
+                    )
                 }
                 item {
                     RepeatCard(
@@ -207,17 +218,22 @@ fun AlarmEditScreen(
                     )
                 }
                 item {
-                    ContentCard(
+                    RecordingCard(
                         draft = draft,
                         recording = recording,
                         preview = preview,
-                        previewingSpeech = previewingSpeech,
                         onStartRecording = ::startRecording,
                         onStopRecording = viewModel::stopRecording,
                         onDeleteRecording = viewModel::deleteRecording,
-                        onToggleRecordingPreview = viewModel::toggleRecordingPreview,
-                        onToggleSpeechPreview = viewModel::toggleSpeechPreview,
+                        onTogglePreview = viewModel::toggleRecordingPreview,
+                    )
+                }
+                item {
+                    SpeechCard(
+                        draft = draft,
+                        previewingSpeech = previewingSpeech,
                         onTextChange = viewModel::setText,
+                        onTogglePreview = viewModel::toggleSpeechPreview,
                     )
                 }
                 item {
@@ -265,7 +281,7 @@ fun AlarmEditScreen(
         ) {
             NeuCard(
                 radius = 20.dp,
-                depth = 8.dp,
+                depth = 10.dp,
                 contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
             ) {
                 Text(
@@ -319,12 +335,17 @@ fun AlarmEditScreen(
 }
 
 @Composable
-private fun EditorTopBar(title: String, onClose: () -> Unit, onSave: () -> Unit) {
+private fun EditorTopBar(
+    isNew: Boolean,
+    timeText: String,
+    onClose: () -> Unit,
+    onSave: () -> Unit,
+) {
     val palette = LocalPalette.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 14.dp),
+            .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         NeuIconButton(
@@ -334,12 +355,20 @@ private fun EditorTopBar(title: String, onClose: () -> Unit, onSave: () -> Unit)
             size = 42.dp,
         )
         Spacer(Modifier.width(14.dp))
-        Text(
-            text = title,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.titleMedium,
-            color = palette.textPrimary,
-        )
+        Column(Modifier.weight(1f)) {
+            Eyebrow(
+                text = stringResource(
+                    if (isNew) R.string.editor_eyebrow_new else R.string.editor_eyebrow_edit,
+                ),
+                color = palette.accent,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = if (isNew) stringResource(R.string.editor_header_new) else timeText,
+                style = MaterialTheme.typography.titleLarge,
+                color = palette.textPrimary,
+            )
+        }
         NeuButton(
             text = stringResource(R.string.action_save),
             onClick = onSave,
@@ -352,13 +381,13 @@ private fun EditorTopBar(title: String, onClose: () -> Unit, onSave: () -> Unit)
 @Composable
 private fun TimeCard(draft: AlarmDraft, onTimeChange: (Int, Int) -> Unit, onLabelChange: (String) -> Unit) {
     val palette = LocalPalette.current
-    NeuCard(modifier = Modifier.fillMaxWidth(), radius = 28.dp, depth = 8.dp) {
+    NeuCard(modifier = Modifier.fillMaxWidth(), radius = 30.dp, depth = 10.dp) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(R.string.editor_time),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = palette.muted,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = palette.textPrimary,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
@@ -367,6 +396,7 @@ private fun TimeCard(draft: AlarmDraft, onTimeChange: (Int, Int) -> Unit, onLabe
                     color = palette.accent,
                 )
             }
+            Spacer(Modifier.height(6.dp))
             TimeWheel(
                 hour = draft.hour,
                 minute = draft.minute,
@@ -374,7 +404,7 @@ private fun TimeCard(draft: AlarmDraft, onTimeChange: (Int, Int) -> Unit, onLabe
                 onMinuteChange = { minute -> onTimeChange(draft.hour, minute) },
                 modifier = Modifier.fillMaxWidth(),
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             NeuTextField(
                 value = draft.label,
                 onValueChange = onLabelChange,
@@ -396,16 +426,17 @@ private fun RepeatCard(
     val palette = LocalPalette.current
     val kind = RepeatPlan.kind(draft.repeatDays)
     NeuCard(modifier = Modifier.fillMaxWidth(), radius = 26.dp, depth = 7.dp) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                text = stringResource(R.string.editor_repeat),
-                style = MaterialTheme.typography.labelMedium,
-                color = palette.muted,
+        Column {
+            EditorSectionHeader(
+                icon = VIcon.Refresh,
+                title = stringResource(R.string.editor_repeat),
             )
+            Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 RepeatPresetChip(R.string.editor_repeat_once, kind == RepeatKind.Once, { onPreset(RepeatKind.Once) }, Modifier.weight(1f))
                 RepeatPresetChip(R.string.editor_repeat_daily, kind == RepeatKind.Daily, { onPreset(RepeatKind.Daily) }, Modifier.weight(1f))
             }
+            Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 RepeatPresetChip(
                     R.string.editor_repeat_weekdays,
@@ -420,8 +451,8 @@ private fun RepeatCard(
                     Modifier.weight(1f),
                 )
             }
-            Spacer(Modifier.height(4.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 DayOfWeek.values().forEach { day ->
                     DayToggle(
                         day = day,
@@ -431,11 +462,6 @@ private fun RepeatCard(
                     )
                 }
             }
-            Text(
-                text = repeatText(draft.repeatDays),
-                style = MaterialTheme.typography.labelSmall,
-                color = palette.muted,
-            )
         }
     }
 }
@@ -453,19 +479,26 @@ private fun RepeatPresetChip(labelRes: Int, selected: Boolean, onClick: () -> Un
 @Composable
 private fun DayToggle(day: DayOfWeek, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
     val palette = LocalPalette.current
+    val shape = RoundedCornerShape(14.dp)
     Box(
         modifier = modifier
             .aspectRatio(1f)
             .neuSurface(
                 palette = palette,
-                fill = if (selected) palette.accent else palette.background,
-                radius = 18.dp,
-                tone = if (selected) NeuTone.Inset else NeuTone.Raised,
-                depth = if (selected) 2.dp else 4.dp,
-                blur = 10.dp,
-                circle = true,
+                fill = if (selected) palette.accent else palette.surface,
+                radius = 14.dp,
+                depth = if (selected) 3.dp else 4.dp,
+                blur = 12.dp,
+                glowColor = if (selected) palette.accent.copy(alpha = 0.35f) else null,
             )
-            .clip(CircleShape)
+            .clip(shape)
+            .then(
+                if (selected) {
+                    Modifier.background(palette.accentGradient, shape)
+                } else {
+                    Modifier.border(1.dp, palette.hairline, shape)
+                },
+            )
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -479,36 +512,28 @@ private fun DayToggle(day: DayOfWeek, selected: Boolean, onClick: () -> Unit, mo
 }
 
 @Composable
-private fun ContentCard(
+private fun RecordingCard(
     draft: AlarmDraft,
     recording: VoiceRecorder.RecordState.Recording?,
     preview: com.vocalarm.app.audio.PreviewState,
-    previewingSpeech: Boolean,
     onStartRecording: () -> Unit,
     onStopRecording: () -> Unit,
     onDeleteRecording: () -> Unit,
-    onToggleRecordingPreview: () -> Unit,
-    onToggleSpeechPreview: () -> Unit,
-    onTextChange: (String) -> Unit,
+    onTogglePreview: () -> Unit,
 ) {
     val palette = LocalPalette.current
     NeuCard(modifier = Modifier.fillMaxWidth(), radius = 26.dp, depth = 7.dp) {
         Column {
-            Text(
-                text = stringResource(R.string.editor_content),
-                style = MaterialTheme.typography.labelMedium,
-                color = palette.muted,
+            EditorSectionHeader(
+                icon = VIcon.Mic,
+                title = stringResource(R.string.editor_recording),
+                subtitle = when {
+                    recording != null -> null
+                    draft.recordingFile != null -> stringResource(R.string.editor_recording_saved)
+                    else -> stringResource(R.string.editor_recording_status_empty)
+                },
             )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = stringResource(R.string.editor_content_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = palette.textSecondary,
-            )
-            Spacer(Modifier.height(16.dp))
-
-            SectionLabel(icon = VIcon.Mic, text = stringResource(R.string.editor_recording))
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(14.dp))
 
             when {
                 recording != null -> {
@@ -516,14 +541,22 @@ private fun ContentCard(
                         amplitude = recording.amplitude,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(46.dp),
+                            .height(52.dp),
                     )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = stringResource(R.string.editor_recording_timer, formatDuration(recording.elapsedMs)),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = palette.textSecondary,
-                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = formatDuration(recording.elapsedMs),
+                            style = TimeDisplayStyle.copy(fontSize = 24.sp, lineHeight = 28.sp),
+                            color = palette.textPrimary,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = stringResource(R.string.editor_recording_tip),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.muted,
+                        )
+                    }
                     Spacer(Modifier.height(12.dp))
                     NeuButton(
                         text = stringResource(R.string.editor_record_stop),
@@ -543,14 +576,14 @@ private fun ContentCard(
                             contentDescription = stringResource(
                                 if (playing) R.string.editor_record_pause else R.string.editor_record_play,
                             ),
-                            onClick = onToggleRecordingPreview,
-                            size = 46.dp,
+                            onClick = onTogglePreview,
+                            size = 48.dp,
                             accent = true,
                         )
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
                             NeuProgressBar(progress = if (isCurrent) preview.progress else 0f)
-                            Spacer(Modifier.height(6.dp))
+                            Spacer(Modifier.height(7.dp))
                             Text(
                                 text = if (isCurrent && preview.durationMs > 0L) {
                                     "${formatDuration(preview.positionMs)} / ${formatDuration(preview.durationMs)}"
@@ -562,7 +595,7 @@ private fun ContentCard(
                             )
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         NeuButton(
                             text = stringResource(R.string.editor_record_redo),
@@ -583,92 +616,93 @@ private fun ContentCard(
                 }
 
                 else -> {
-                    Text(
-                        text = stringResource(R.string.editor_recording_empty),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = palette.muted,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    NeuButton(
-                        text = stringResource(R.string.editor_record_start),
-                        onClick = onStartRecording,
-                        modifier = Modifier.fillMaxWidth(),
-                        icon = VIcon.Mic,
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(104.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(palette.background)
+                            .border(1.dp, palette.hairline, RoundedCornerShape(18.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            NeuIconTile(icon = VIcon.Mic, size = 42.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = stringResource(R.string.editor_recording_empty),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = palette.textSecondary,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                NeuButton(
+                                    text = stringResource(R.string.editor_record_start),
+                                    onClick = onStartRecording,
+                                    icon = VIcon.Record,
+                                    accent = true,
+                                    height = 40.dp,
+                                )
+                            }
+                        }
+                    }
                 }
             }
-
-            Spacer(Modifier.height(18.dp))
-            NeuDivider()
-            Spacer(Modifier.height(18.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SectionLabel(icon = VIcon.Volume, text = stringResource(R.string.editor_speech))
-                Spacer(Modifier.weight(1f))
-                NeuButton(
-                    text = stringResource(
-                        if (previewingSpeech) R.string.editor_speech_stop else R.string.editor_speech_preview,
-                    ),
-                    onClick = onToggleSpeechPreview,
-                    icon = if (previewingSpeech) VIcon.Stop else VIcon.Play,
-                    height = 40.dp,
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            NeuTextField(
-                value = draft.text,
-                onValueChange = onTextChange,
-                placeholder = stringResource(R.string.editor_speech_placeholder),
-                minLines = 3,
-                maxLines = 7,
-                singleLine = false,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = if (previewingSpeech) {
-                    stringResource(R.string.editor_speech_previewing)
-                } else {
-                    stringResource(R.string.editor_speech_hint)
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = if (previewingSpeech) palette.accent else palette.muted,
-            )
         }
     }
 }
 
 @Composable
-private fun SectionLabel(icon: VIcon, text: String) {
+private fun SpeechCard(
+    draft: AlarmDraft,
+    previewingSpeech: Boolean,
+    onTextChange: (String) -> Unit,
+    onTogglePreview: () -> Unit,
+) {
     val palette = LocalPalette.current
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        VIconImage(icon = icon, tint = palette.accent, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = text,
-            style = MaterialTheme.typography.titleMedium,
-            color = palette.textPrimary,
-        )
-    }
-}
-
-@Composable
-private fun AmplitudeBars(amplitude: Float, modifier: Modifier = Modifier) {
-    val palette = LocalPalette.current
-    val weights = remember { listOf(0.35f, 0.75f, 0.5f, 1f, 0.6f, 0.9f, 0.4f, 0.8f, 0.55f, 0.95f, 0.45f) }
-    Canvas(modifier) {
-        val barCount = 36
-        val gap = 3.dp.toPx()
-        val barWidth = ((size.width - gap * (barCount - 1)) / barCount).coerceAtLeast(1f)
-        for (index in 0 until barCount) {
-            val weight = weights[index % weights.size]
-            val height = size.height * (0.08f + amplitude.coerceIn(0f, 1f) * weight * 0.92f)
-            val left = index * (barWidth + gap)
-            drawRoundRect(
-                color = palette.accent.copy(alpha = 0.35f + 0.65f * weight),
-                topLeft = Offset(left, size.height - height),
-                size = Size(barWidth, height),
-                cornerRadius = CornerRadius(barWidth / 2f),
+    NeuCard(modifier = Modifier.fillMaxWidth(), radius = 26.dp, depth = 7.dp) {
+        Column {
+            EditorSectionHeader(
+                icon = VIcon.Volume,
+                title = stringResource(R.string.editor_speech),
+                subtitle = null,
+                trailing = {
+                    NeuButton(
+                        text = stringResource(
+                            if (previewingSpeech) R.string.editor_speech_stop else R.string.editor_speech_preview,
+                        ),
+                        onClick = onTogglePreview,
+                        icon = if (previewingSpeech) VIcon.Stop else VIcon.Play,
+                        height = 40.dp,
+                    )
+                },
             )
+            Spacer(Modifier.height(14.dp))
+            NeuTextField(
+                value = draft.text,
+                onValueChange = onTextChange,
+                placeholder = stringResource(R.string.editor_speech_placeholder),
+                minLines = 3,
+                maxLines = 6,
+                singleLine = false,
+            )
+            Spacer(Modifier.height(9.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = if (previewingSpeech) {
+                        stringResource(R.string.editor_speech_previewing)
+                    } else {
+                        stringResource(R.string.editor_speech_hint)
+                    },
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (previewingSpeech) palette.accent else palette.muted,
+                )
+                Text(
+                    text = stringResource(R.string.editor_character_count, draft.text.length),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.muted,
+                )
+            }
         }
     }
 }
@@ -686,12 +720,12 @@ private fun VoiceCard(
         VoiceCatalog.resolve(draft.voicePreset, draft.voiceName, voices)
     }
     NeuCard(modifier = Modifier.fillMaxWidth(), radius = 26.dp, depth = 7.dp) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                text = stringResource(R.string.editor_voice),
-                style = MaterialTheme.typography.labelMedium,
-                color = palette.muted,
+        Column {
+            EditorSectionHeader(
+                icon = VIcon.Droplet,
+                title = stringResource(R.string.editor_voice),
             )
+            Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 NeuChip(
                     label = stringResource(R.string.editor_voice_default),
@@ -712,18 +746,33 @@ private fun VoiceCard(
                     modifier = Modifier.weight(1f),
                 )
             }
-            NeuChip(
-                label = if (draft.voicePreset == VoicePreset.Custom && resolved != null) {
-                    stringResource(R.string.editor_voice_more) + " · " + resolved.displayName
-                } else {
-                    stringResource(R.string.editor_voice_more)
-                },
-                selected = draft.voicePreset == VoicePreset.Custom,
-                onClick = onOpenPicker,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = voices.isNotEmpty(),
-            )
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(palette.surfaceHigh)
+                    .border(1.dp, palette.hairline, RoundedCornerShape(16.dp))
+                    .clickable(enabled = voices.isNotEmpty(), onClick = onOpenPicker)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (draft.voicePreset == VoicePreset.Custom && resolved != null) {
+                        stringResource(R.string.editor_voice_more) + " · " + resolved.displayName
+                    } else {
+                        stringResource(R.string.editor_voice_more)
+                    },
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (voices.isEmpty()) palette.muted else palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                VIconImage(icon = VIcon.ChevronRight, tint = palette.muted, modifier = Modifier.size(16.dp))
+            }
             if (draft.voicePreset != VoicePreset.Default) {
+                Spacer(Modifier.height(8.dp))
                 Text(
                     text = if (resolved == null) {
                         stringResource(R.string.editor_voice_none)
@@ -736,7 +785,9 @@ private fun VoiceCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(14.dp))
+            NeuDivider()
+            Spacer(Modifier.height(14.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(R.string.editor_rate),
@@ -744,10 +795,9 @@ private fun VoiceCard(
                     color = palette.textPrimary,
                 )
                 Spacer(Modifier.weight(1f))
-                Text(
+                StatusPill(
+                    icon = VIcon.Speed,
                     text = stringResource(R.string.editor_rate_value, formatRate(draft.speechRate)),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = palette.accent,
                 )
             }
             NeuSlider(
@@ -771,37 +821,38 @@ private fun PlaybackCard(
 ) {
     val palette = LocalPalette.current
     NeuCard(modifier = Modifier.fillMaxWidth(), radius = 26.dp, depth = 7.dp) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                text = stringResource(R.string.editor_loop),
-                style = MaterialTheme.typography.labelMedium,
-                color = palette.muted,
+        Column {
+            EditorSectionHeader(
+                icon = VIcon.Play,
+                title = stringResource(R.string.editor_loop),
             )
+            Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 NeuChip(
-                    label = stringResource(R.string.editor_loop_once),
+                    label = stringResource(R.string.editor_loop_once_short),
                     selected = draft.loopMode == LoopMode.Once,
                     onClick = { onLoopMode(LoopMode.Once) },
                     modifier = Modifier.weight(1f),
                 )
                 NeuChip(
-                    label = stringResource(R.string.editor_loop_times, draft.loopCount),
+                    label = stringResource(R.string.editor_loop_times_short),
                     selected = draft.loopMode == LoopMode.Times,
                     onClick = { onLoopMode(LoopMode.Times) },
                     modifier = Modifier.weight(1f),
                 )
+                NeuChip(
+                    label = stringResource(R.string.editor_loop_continuous_short),
+                    selected = draft.loopMode == LoopMode.Continuous,
+                    onClick = { onLoopMode(LoopMode.Continuous) },
+                    modifier = Modifier.weight(1f),
+                )
             }
-            NeuChip(
-                label = stringResource(R.string.editor_loop_continuous),
-                selected = draft.loopMode == LoopMode.Continuous,
-                onClick = { onLoopMode(LoopMode.Continuous) },
-                modifier = Modifier.fillMaxWidth(),
-            )
             if (draft.loopMode == LoopMode.Times) {
+                Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = stringResource(R.string.editor_loop_count_hint),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = palette.textSecondary,
                     )
                     Spacer(Modifier.weight(1f))
@@ -827,8 +878,12 @@ private fun PlaybackCard(
                     )
                 }
             }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(14.dp))
+            NeuDivider()
+            Spacer(Modifier.height(14.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
+                VIconImage(icon = VIcon.Volume, tint = palette.muted, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
                     text = stringResource(R.string.editor_volume),
                     style = MaterialTheme.typography.bodyMedium,
@@ -850,18 +905,21 @@ private fun PlaybackCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(R.string.editor_fade),
+                    modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyMedium,
                     color = palette.textPrimary,
                 )
-                Spacer(Modifier.weight(1f))
+                if (draft.fadeIn) {
+                    Text(
+                        text = stringResource(R.string.editor_fade_value, draft.fadeSeconds),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.muted,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
                 NeuSwitch(checked = draft.fadeIn, onCheckedChange = onFadeIn)
             }
             if (draft.fadeIn) {
-                Text(
-                    text = stringResource(R.string.editor_fade_seconds, draft.fadeSeconds),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = palette.muted,
-                )
                 NeuSlider(
                     value = draft.fadeSeconds.toFloat(),
                     onValueChange = { onFadeSeconds(it.roundToInt()) },
@@ -879,22 +937,24 @@ private fun SnoozeCard(draft: AlarmDraft) {
     NeuCard(modifier = Modifier.fillMaxWidth(), radius = 24.dp, depth = 6.dp) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                VIconImage(icon = VIcon.Snooze, tint = palette.accent, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.editor_snooze),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = palette.textPrimary,
-                )
+                NeuIconTile(icon = VIcon.Snooze, size = 40.dp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.editor_snooze),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = palette.textPrimary,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(R.string.editor_snooze_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textSecondary,
+                    )
+                }
             }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.editor_snooze_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = palette.textSecondary,
-            )
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 draft.snoozeMinutes.forEach { minutes ->
                     OptionPill(text = stringResource(R.string.editor_minutes_short, minutes))
                 }
@@ -908,21 +968,72 @@ private fun OptionPill(text: String) {
     val palette = LocalPalette.current
     Box(
         modifier = Modifier
-            .neuSurface(
-                palette = palette,
-                fill = palette.background,
-                radius = 16.dp,
-                tone = NeuTone.Inset,
-                depth = 3.dp,
-                blur = 10.dp,
-            )
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .clip(RoundedCornerShape(12.dp))
+            .background(palette.surfaceHigh)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelSmall,
             color = palette.textSecondary,
         )
+    }
+}
+
+@Composable
+private fun EditorSectionHeader(
+    icon: VIcon,
+    title: String,
+    subtitle: String? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    val palette = LocalPalette.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        NeuIconTile(icon = icon, size = 38.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = palette.textPrimary,
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.muted,
+                )
+            }
+        }
+        if (trailing != null) {
+            trailing()
+        }
+    }
+}
+
+@Composable
+private fun AmplitudeBars(amplitude: Float, modifier: Modifier = Modifier) {
+    val palette = LocalPalette.current
+    val weights = remember { listOf(0.35f, 0.75f, 0.5f, 1f, 0.6f, 0.9f, 0.4f, 0.8f, 0.55f, 0.95f, 0.45f) }
+    Canvas(modifier) {
+        val barCount = 40
+        val gap = 3.dp.toPx()
+        val barWidth = ((size.width - gap * (barCount - 1)) / barCount).coerceAtLeast(1f)
+        for (index in 0 until barCount) {
+            val weight = weights[index % weights.size]
+            val height = size.height * (0.10f + amplitude.coerceIn(0f, 1f) * weight * 0.90f)
+            val left = index * (barWidth + gap)
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(palette.accent, palette.accentDeep),
+                    startY = size.height - height,
+                    endY = size.height,
+                ),
+                topLeft = Offset(left, size.height - height),
+                size = Size(barWidth, height),
+                cornerRadius = CornerRadius(barWidth / 2f),
+            )
+        }
     }
 }
 
@@ -943,8 +1054,8 @@ private fun VoicePickerDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp),
-            radius = 28.dp,
-            depth = 10.dp,
+            radius = 30.dp,
+            depth = 12.dp,
             contentPadding = PaddingValues(0.dp),
         ) {
             Column {
@@ -957,7 +1068,7 @@ private fun VoicePickerDialog(
                     Text(
                         text = stringResource(R.string.editor_voice_more),
                         modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleLarge,
                         color = palette.textPrimary,
                     )
                     NeuIconButton(
@@ -967,28 +1078,25 @@ private fun VoicePickerDialog(
                         size = 38.dp,
                     )
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onDefault)
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.editor_voice_default),
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = palette.textPrimary,
-                    )
-                    if (selectedName == null) {
-                        VIconImage(icon = VIcon.Check, tint = palette.accent, modifier = Modifier.size(18.dp))
-                    }
-                }
+                VoiceOptionRow(
+                    title = stringResource(R.string.editor_voice_default),
+                    subtitle = null,
+                    selected = selectedName == null,
+                    onClick = onDefault,
+                )
                 NeuDivider()
-                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                LazyColumn(Modifier.heightIn(max = 380.dp)) {
                     items(items = voices, key = { it.name }) { voice ->
-                        VoiceRow(
-                            voice = voice,
+                        VoiceOptionRow(
+                            title = voice.displayName,
+                            subtitle = buildString {
+                                append(voice.localeTag)
+                                when (VoiceCatalog.genderOf(voice)) {
+                                    VoiceGender.Female -> append(" · 女")
+                                    VoiceGender.Male -> append(" · 男")
+                                    VoiceGender.Unknown -> Unit
+                                }
+                            },
                             selected = voice.name == selectedName,
                             onClick = { onSelect(voice) },
                         )
@@ -1000,36 +1108,36 @@ private fun VoicePickerDialog(
 }
 
 @Composable
-private fun VoiceRow(voice: VoiceDescriptor, selected: Boolean, onClick: () -> Unit) {
+private fun VoiceOptionRow(
+    title: String,
+    subtitle: String?,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
     val palette = LocalPalette.current
-    val gender = VoiceCatalog.genderOf(voice)
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(if (selected) palette.accentTint.copy(alpha = 0.55f) else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = 20.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                text = voice.displayName,
+                text = title,
                 style = MaterialTheme.typography.bodyLarge,
                 color = if (selected) palette.accent else palette.textPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = buildString {
-                    append(voice.localeTag)
-                    when (gender) {
-                        VoiceGender.Female -> append(" · 女")
-                        VoiceGender.Male -> append(" · 男")
-                        VoiceGender.Unknown -> Unit
-                    }
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = palette.muted,
-            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.muted,
+                )
+            }
         }
         if (selected) {
             VIconImage(icon = VIcon.Check, tint = palette.accent, modifier = Modifier.size(18.dp))
@@ -1055,4 +1163,3 @@ private fun editorMessageText(raw: String): String = when {
 
     else -> raw
 }
-

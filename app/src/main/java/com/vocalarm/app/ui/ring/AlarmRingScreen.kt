@@ -29,11 +29,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -41,10 +45,13 @@ import com.vocalarm.app.AppContainer
 import com.vocalarm.app.R
 import com.vocalarm.app.alarm.AlarmPlaybackEngine
 import com.vocalarm.app.alarm.AlarmService
-import com.vocalarm.app.ui.repeatText
+import com.vocalarm.app.ui.Eyebrow
+import com.vocalarm.app.ui.StatusPill
 import com.vocalarm.app.ui.neu.NeuButton
 import com.vocalarm.app.ui.neu.NeuCard
 import com.vocalarm.app.ui.neu.VIcon
+import com.vocalarm.app.ui.neu.VIconImage
+import com.vocalarm.app.ui.repeatText
 import com.vocalarm.app.ui.theme.LocalPalette
 import com.vocalarm.app.ui.theme.TimeDisplayStyle
 import kotlinx.coroutines.flow.filterNotNull
@@ -73,7 +80,6 @@ fun AlarmRingScreen(container: AppContainer, onFinish: () -> Unit) {
 
     val current = ringing
     if (current == null) {
-        // The service sets the state before posting the notification; this covers the short race.
         Box(Modifier.fillMaxSize().background(palette.background))
         return
     }
@@ -82,15 +88,40 @@ fun AlarmRingScreen(container: AppContainer, onFinish: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(palette.background),
+            .drawBehind {
+                drawRect(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            palette.accent.copy(alpha = if (palette.isDark) 0.26f else 0.20f),
+                            palette.background,
+                        ),
+                        center = Offset(size.width / 2f, size.height * 0.30f),
+                        radius = size.height * 0.62f,
+                    ),
+                )
+                drawCircle(
+                    color = palette.lightShadow.copy(alpha = if (palette.isDark) 0.04f else 0.14f),
+                    radius = size.width * 0.55f,
+                    center = Offset(size.width * 0.1f, size.height * 0.95f),
+                )
+            },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .systemBarsPadding()
-                .padding(horizontal = 28.dp, vertical = 24.dp),
+                .padding(horizontal = 26.dp, vertical = 22.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            Eyebrow(text = "VOCALARM", color = palette.accent)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = alarm.label.ifBlank { stringResource(R.string.ring_label_fallback) },
+                style = MaterialTheme.typography.titleLarge,
+                color = palette.textSecondary,
+                textAlign = TextAlign.Center,
+            )
+
             Spacer(Modifier.weight(1f))
 
             Box(contentAlignment = Alignment.Center) {
@@ -98,53 +129,55 @@ fun AlarmRingScreen(container: AppContainer, onFinish: () -> Unit) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = alarm.timeText,
-                        style = TimeDisplayStyle.copy(fontSize = 76.sp, lineHeight = 84.sp),
+                        style = TimeDisplayStyle.copy(fontSize = 82.sp, lineHeight = 88.sp),
                         color = palette.textPrimary,
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        StatusPill(
+                            icon = VIcon.Loop,
+                            text = repeatText(alarm.repeatDays),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        val playingLabel = when (nowPlaying?.segment) {
+                            AlarmPlaybackEngine.Segment.Recording -> stringResource(R.string.ring_now_playing_recording)
+                            AlarmPlaybackEngine.Segment.Speech -> stringResource(R.string.ring_now_playing_speech)
+                            null -> null
+                        }
+                        if (playingLabel != null) {
+                            StatusPill(icon = VIcon.Volume, text = playingLabel)
+                        }
+                    }
+                    Spacer(Modifier.height(18.dp))
                     Text(
-                        text = alarm.label.ifBlank { stringResource(R.string.ring_label_fallback) },
-                        style = MaterialTheme.typography.titleLarge,
+                        text = alarm.text?.takeIf { it.isNotBlank() }
+                            ?: stringResource(R.string.ring_now_playing_recording),
+                        modifier = Modifier.padding(horizontal = 34.dp),
+                        style = MaterialTheme.typography.bodyMedium,
                         color = palette.textSecondary,
                         textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
 
-            Spacer(Modifier.height(28.dp))
-            Text(
-                text = repeatText(alarm.repeatDays),
-                style = MaterialTheme.typography.labelMedium,
-                color = palette.muted,
-            )
-            Spacer(Modifier.height(10.dp))
-            val playingLabel = when (nowPlaying?.segment) {
-                AlarmPlaybackEngine.Segment.Recording -> stringResource(R.string.ring_now_playing_recording)
-                AlarmPlaybackEngine.Segment.Speech -> stringResource(R.string.ring_now_playing_speech)
-                null -> null
-            }
-            if (playingLabel != null) {
-                Text(
-                    text = playingLabel,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = palette.accent,
-                )
-            }
+            Spacer(Modifier.height(26.dp))
 
             current.message?.let { message ->
-                Spacer(Modifier.height(20.dp))
                 NeuCard(
                     radius = 20.dp,
-                    depth = 5.dp,
+                    depth = 6.dp,
                     contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
                 ) {
                     Text(
                         text = message,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = palette.danger,
                         textAlign = TextAlign.Center,
                     )
                 }
+                Spacer(Modifier.height(18.dp))
             }
 
             Spacer(Modifier.weight(1f))
@@ -160,30 +193,57 @@ fun AlarmRingScreen(container: AppContainer, onFinish: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 alarm.snoozeMinutes.take(2).forEach { minutes ->
-                    NeuButton(
-                        text = stringResource(R.string.action_snooze, minutes),
-                        onClick = { AlarmService.snooze(context, minutes, alarm.id) },
+                    SnoozeCard(
+                        minutes = minutes,
                         modifier = Modifier.weight(1f),
-                        icon = VIcon.Snooze,
-                        height = 52.dp,
+                        onClick = { AlarmService.snooze(context, minutes, alarm.id) },
                     )
                 }
                 if (alarm.snoozeMinutes.size == 1) {
                     Spacer(Modifier.weight(1f))
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
             NeuButton(
-                text = stringResource(R.string.action_stop),
+                text = stringResource(R.string.ring_stop_label),
                 onClick = { AlarmService.stop(context) },
                 modifier = Modifier.fillMaxWidth(),
                 icon = VIcon.Stop,
                 accent = true,
-                height = 58.dp,
+                height = 60.dp,
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = stringResource(R.string.ring_stop_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.muted,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SnoozeCard(minutes: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val palette = LocalPalette.current
+    NeuCard(
+        modifier = modifier,
+        radius = 24.dp,
+        depth = 8.dp,
+        contentPadding = PaddingValues(vertical = 14.dp),
+        onClick = onClick,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = stringResource(R.string.editor_minutes_short, minutes),
+                style = MaterialTheme.typography.titleLarge,
+                color = palette.textPrimary,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.ring_snooze_caption),
                 style = MaterialTheme.typography.labelSmall,
                 color = palette.muted,
             )
@@ -199,25 +259,35 @@ private fun PulseRings() {
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2_600, easing = LinearEasing),
+            animation = tween(durationMillis = 3_000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart,
         ),
         label = "ringPulseValue",
     )
-    Canvas(Modifier.size(300.dp)) {
+    Canvas(Modifier.size(310.dp)) {
         val center = Offset(size.width / 2f, size.height / 2f)
-        val minRadius = size.minDimension * 0.28f
-        val maxRadius = size.minDimension * 0.5f
+        val minRadius = size.minDimension * 0.26f
+        val maxRadius = size.minDimension * 0.50f
         for (index in 0..2) {
             val phase = (pulse + index * 0.33f) % 1f
             val radius = minRadius + (maxRadius - minRadius) * phase
             drawCircle(
-                color = palette.accent.copy(alpha = (1f - phase) * 0.22f),
+                color = palette.accent.copy(alpha = (1f - phase) * 0.20f),
                 radius = radius,
                 center = center,
-                style = Stroke(width = 1.5.dp.toPx()),
+                style = Stroke(width = 1.4.dp.toPx()),
             )
         }
+        drawCircle(
+            color = palette.accent.copy(alpha = 0.06f),
+            radius = size.minDimension * 0.30f,
+            center = center,
+        )
+        drawCircle(
+            color = Color.White.copy(alpha = 0.05f),
+            radius = size.minDimension * 0.22f,
+            center = center,
+        )
     }
 }
 

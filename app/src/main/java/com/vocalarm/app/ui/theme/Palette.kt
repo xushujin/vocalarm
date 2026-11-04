@@ -3,13 +3,15 @@ package com.vocalarm.app.ui.theme
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * A single neumorphic colour scheme. Every palette carries both the surface colour and the two
- * shadow tints, because neumorphism is defined by the light direction rather than by Material roles.
+ * One neumorphic colour scheme. Both the surface tones and the two light sources are derived from
+ * six base colours so every screen keeps a single, coherent lighting model.
  */
 @Immutable
 data class VocalarmPalette(
@@ -28,7 +30,34 @@ data class VocalarmPalette(
     val track: Color,
     val lightShadowAlpha: Float,
     val darkShadowAlpha: Float,
-)
+) {
+
+    /** Cards sit a touch above the page, so depth survives even on dim screens. */
+    val surface: Color
+        get() = lerp(background, Color.White, if (isDark) 0.05f else 0.32f)
+
+    /** Chips and small inset areas that need one more step of separation. */
+    val surfaceHigh: Color
+        get() = lerp(background, Color.White, if (isDark) 0.09f else 0.46f)
+
+    /** A solid tint used behind icons instead of translucent overlays. */
+    val accentTint: Color
+        get() = lerp(background, accent, if (isDark) 0.24f else 0.13f)
+
+    /** End colour for primary-action gradients. */
+    val accentDeep: Color
+        get() = lerp(accent, Color.Black, if (isDark) 0.10f else 0.24f)
+
+    /** Hairline used to stop light surfaces from dissolving into each other. */
+    val hairline: Color
+        get() = lerp(darkShadow, Color.White, 0.22f).copy(alpha = if (isDark) 0.42f else 0.34f)
+
+    val accentGradient: Brush
+        get() = Brush.linearGradient(listOf(accent, accentDeep))
+
+    val softGradient: Brush
+        get() = Brush.linearGradient(listOf(surfaceHigh, surface))
+}
 
 object Palettes {
 
@@ -36,90 +65,90 @@ object Palettes {
         id = "mist",
         nameRes = com.vocalarm.app.R.string.palette_mist,
         isDark = false,
-        background = Color(0xFFE7EDF4),
+        background = Color(0xFFE8EEF6),
         lightShadow = Color(0xFFFFFFFF),
-        darkShadow = Color(0xFFBCC7D8),
-        accent = Color(0xFF3F6FD1),
+        darkShadow = Color(0xFFB8C6DA),
+        accent = Color(0xFF4A77DE),
         onAccent = Color(0xFFFFFFFF),
-        textPrimary = Color(0xFF22303F),
-        textSecondary = Color(0xFF6C7C8F),
-        muted = Color(0xFF93A1B2),
-        danger = Color(0xFFC0473F),
-        track = Color(0xFFD3DDEA),
+        textPrimary = Color(0xFF1D2A3A),
+        textSecondary = Color(0xFF5E7086),
+        muted = Color(0xFF8B9AAD),
+        danger = Color(0xFFC64B43),
+        track = Color(0xFFD6E0EC),
         lightShadowAlpha = 0.95f,
-        darkShadowAlpha = 0.50f,
+        darkShadowAlpha = 0.55f,
     )
 
     val Sand = VocalarmPalette(
         id = "sand",
         nameRes = com.vocalarm.app.R.string.palette_sand,
         isDark = false,
-        background = Color(0xFFEFE5D8),
-        lightShadow = Color(0xFFFFFBF4),
-        darkShadow = Color(0xFFC7B59E),
-        accent = Color(0xFFB06A3B),
-        onAccent = Color(0xFFFFF8F1),
-        textPrimary = Color(0xFF3A2F25),
-        textSecondary = Color(0xFF7C6B5B),
-        muted = Color(0xFFA2917F),
-        danger = Color(0xFFB0453F),
-        track = Color(0xFFDCCDB9),
+        background = Color(0xFFF1E7DA),
+        lightShadow = Color(0xFFFFFBF5),
+        darkShadow = Color(0xFFCBB79F),
+        accent = Color(0xFFB26B3F),
+        onAccent = Color(0xFFFFF8F2),
+        textPrimary = Color(0xFF33281E),
+        textSecondary = Color(0xFF74614F),
+        muted = Color(0xFF9C8773),
+        danger = Color(0xFFB5463F),
+        track = Color(0xFFDFCEB9),
         lightShadowAlpha = 0.95f,
-        darkShadowAlpha = 0.45f,
+        darkShadowAlpha = 0.48f,
     )
 
     val Moss = VocalarmPalette(
         id = "moss",
         nameRes = com.vocalarm.app.R.string.palette_moss,
         isDark = false,
-        background = Color(0xFFE4EBE1),
-        lightShadow = Color(0xFFFCFFF8),
-        darkShadow = Color(0xFFB7C5B7),
-        accent = Color(0xFF47765A),
+        background = Color(0xFFE7EEE4),
+        lightShadow = Color(0xFFFDFFF9),
+        darkShadow = Color(0xFFB6C4B6),
+        accent = Color(0xFF4A7A5E),
         onAccent = Color(0xFFF7FFF9),
-        textPrimary = Color(0xFF2A382E),
-        textSecondary = Color(0xFF67796B),
-        muted = Color(0xFF93A595),
-        danger = Color(0xFFB0453F),
-        track = Color(0xFFCFDACD),
+        textPrimary = Color(0xFF25342A),
+        textSecondary = Color(0xFF5F7265),
+        muted = Color(0xFF8C9F90),
+        danger = Color(0xFFB5463F),
+        track = Color(0xFFCFDBCC),
         lightShadowAlpha = 0.95f,
-        darkShadowAlpha = 0.45f,
+        darkShadowAlpha = 0.48f,
     )
 
     val Blossom = VocalarmPalette(
         id = "blossom",
         nameRes = com.vocalarm.app.R.string.palette_blossom,
         isDark = false,
-        background = Color(0xFFF2E5E9),
+        background = Color(0xFFF4E8ED),
         lightShadow = Color(0xFFFFFAFC),
-        darkShadow = Color(0xFFCDB9C1),
-        accent = Color(0xFFAC4E6A),
-        onAccent = Color(0xFFFFF7FA),
-        textPrimary = Color(0xFF3B2A30),
-        textSecondary = Color(0xFF7C6570),
-        muted = Color(0xFFA48D97),
-        danger = Color(0xFFB4404A),
-        track = Color(0xFFE0CBD2),
+        darkShadow = Color(0xFFD2BCC5),
+        accent = Color(0xFFB2526F),
+        onAccent = Color(0xFFFFF8FA),
+        textPrimary = Color(0xFF37262D),
+        textSecondary = Color(0xFF7A626D),
+        muted = Color(0xFFA18A95),
+        danger = Color(0xFFB5464C),
+        track = Color(0xFFE3CDD5),
         lightShadowAlpha = 0.95f,
-        darkShadowAlpha = 0.45f,
+        darkShadowAlpha = 0.48f,
     )
 
     val Ink = VocalarmPalette(
         id = "ink",
         nameRes = com.vocalarm.app.R.string.palette_ink,
         isDark = true,
-        background = Color(0xFF22262D),
-        lightShadow = Color(0xFF353C47),
-        darkShadow = Color(0xFF111419),
-        accent = Color(0xFF7FA8FF),
-        onAccent = Color(0xFF0B1220),
-        textPrimary = Color(0xFFE9EEF7),
-        textSecondary = Color(0xFF9BA8BA),
-        muted = Color(0xFF7A8798),
-        danger = Color(0xFFFF8B80),
-        track = Color(0xFF2C323A),
-        lightShadowAlpha = 0.55f,
-        darkShadowAlpha = 0.70f,
+        background = Color(0xFF1C2028),
+        lightShadow = Color(0xFF303845),
+        darkShadow = Color(0xFF0C0F14),
+        accent = Color(0xFF8FB4FF),
+        onAccent = Color(0xFF0A1220),
+        textPrimary = Color(0xFFEDF2FA),
+        textSecondary = Color(0xFFA6B3C6),
+        muted = Color(0xFF7C8A9E),
+        danger = Color(0xFFFF8F86),
+        track = Color(0xFF2A303A),
+        lightShadowAlpha = 0.62f,
+        darkShadowAlpha = 0.78f,
     )
 
     val all: List<VocalarmPalette> = listOf(Mist, Sand, Moss, Blossom, Ink)
@@ -129,12 +158,15 @@ object Palettes {
     fun byId(id: String?): VocalarmPalette = all.firstOrNull { it.id == id } ?: default
 }
 
-/** Shadow geometry shared by every neumorphic surface so the whole app has one light source. */
+/**
+ * Shadow geometry shared by every surface. Slightly asymmetric (less side light, more vertical
+ * depth) so cards read as pressed paper instead of glowing halos.
+ */
 @Immutable
 data class NeuMetrics(
-    val lightOffset: Dp = (-5).dp,
-    val darkOffset: Dp = 5.dp,
-    val blur: Dp = 16.dp,
+    val lightOffset: Dp = (-4).dp,
+    val darkOffset: Dp = 6.dp,
+    val blur: Dp = 15.dp,
     val layers: Int = 12,
 )
 

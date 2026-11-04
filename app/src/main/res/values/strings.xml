@@ -24,15 +24,32 @@
     <string name="action_retry">重试</string>
 
     <!-- home list -->
-    <string name="home_greeting">Vocalarm</string>
+    <string name="home_greeting_morning">早上好</string>
+    <string name="home_greeting_afternoon">下午好</string>
+    <string name="home_greeting_evening">晚上好</string>
+    <string name="home_date_line">%1$d月%2$d日 · 周%3$s</string>
+    <string name="home_section_alarms">你的闹钟</string>
+    <string name="home_alarm_count">%1$d 个开启</string>
+    <string name="home_hero_hint">轻触编辑</string>
+    <string name="home_quiet_title">今天没有启用的闹钟</string>
+    <string name="home_quiet_body">所有闹钟都关掉了。打开一个，或新建一个。</string>
+    <string name="home_empty_title">清晨，从你的声音开始</string>
+    <string name="home_empty_body">录一段声音，或写一句话叫醒你。</string>
+    <string name="home_empty_features">录音铃声 · 文字转语音 · 锁屏响铃</string>
+    <string name="home_empty_action">创建第一个闹钟</string>
+    <string name="home_tips_title">你可以这样用</string>
+    <string name="home_tip_record_title">录下自己的声音</string>
+    <string name="home_tip_record_body">响铃时优先播放录音</string>
+    <string name="home_tip_speech_title">写一句话</string>
+    <string name="home_tip_speech_body">自动合成语音，可调语速和音色</string>
+    <string name="home_tip_lock_title">锁屏也能响</string>
+    <string name="home_tip_lock_body">全屏提醒，音量可渐强</string>
     <string name="home_subtitle">用你自己的声音叫醒自己</string>
     <string name="alarm_default_label">闹钟</string>
     <string name="home_next_alarm">下一个闹钟</string>
     <string name="home_remaining_hours_minutes">还有 %1$d 小时 %2$d 分钟</string>
     <string name="home_remaining_minutes">还有 %1$d 分钟</string>
     <string name="home_remaining_soon">马上响铃</string>
-    <string name="home_empty_title">还没有闹钟</string>
-    <string name="home_empty_body">录制一段自己的声音，或输入一句话，让闹钟用你的语气叫醒你。</string>
     <string name="home_new_alarm">新建闹钟</string>
     <string name="home_once">仅一次</string>
     <string name="home_daily">每天</string>
@@ -41,7 +58,6 @@
     <string name="home_content_recording">录音</string>
     <string name="home_content_speech">语音</string>
     <string name="home_alarm_off">已关闭</string>
-    <string name="home_alarm_on">已开启</string>
     <string name="home_delete_title">删除这个闹钟？</string>
     <string name="home_delete_body">删除后无法恢复，配套的录音文件也会被清理。</string>
     <string name="home_notifications_off">通知已关闭，锁屏时可能看不到响铃界面</string>
@@ -55,8 +71,13 @@
     <string name="store_issue_save_failed">保存失败：%1$s</string>
 
     <!-- editor -->
-    <string name="editor_title_new">新建闹钟</string>
-    <string name="editor_title_edit">编辑闹钟</string>
+    <string name="editor_eyebrow_new">新建</string>
+    <string name="editor_eyebrow_edit">编辑</string>
+    <string name="editor_header_new">新的闹钟</string>
+    <string name="editor_recording_status_empty">尚未录制</string>
+    <string name="editor_recording_tip">响铃时优先播放你的声音</string>
+    <string name="editor_character_count">%1$d / 2000</string>
+    <string name="editor_fade_value">%1$d 秒</string>
     <string name="editor_time">时间</string>
     <string name="editor_label_hint">标签（可选）</string>
     <string name="editor_repeat">重复</string>
@@ -71,8 +92,6 @@
     <string name="editor_day_fri">五</string>
     <string name="editor_day_sat">六</string>
     <string name="editor_day_sun">日</string>
-    <string name="editor_content">响铃内容</string>
-    <string name="editor_content_hint">同一闹钟会先播放录音，再朗读文字。</string>
     <string name="editor_recording">录音铃声</string>
     <string name="editor_recording_empty">还没有录音。录制后会在响铃时优先播放。</string>
     <string name="editor_record_start">开始录制</string>
@@ -82,7 +101,6 @@
     <string name="editor_record_pause">暂停</string>
     <string name="editor_record_delete">删除录音</string>
     <string name="editor_recording_saved">录音已保存</string>
-    <string name="editor_recording_timer">%1$s / 建议 60 秒内</string>
     <string name="editor_speech">文字转语音</string>
     <string name="editor_speech_hint">输入要朗读的内容，响铃时自动合成语音。</string>
     <string name="editor_speech_placeholder">例如：该起床了，今天九点有晨会。</string>
@@ -101,6 +119,9 @@
     <string name="editor_rate_value">%1$s 倍</string>
     <string name="editor_loop">播放方式</string>
     <string name="editor_loop_once">播放一次</string>
+    <string name="editor_loop_once_short">一次</string>
+    <string name="editor_loop_times_short">循环</string>
+    <string name="editor_loop_continuous_short">持续</string>
     <string name="editor_loop_times">循环 %1$d 次</string>
     <string name="editor_loop_continuous">持续循环</string>
     <string name="editor_loop_count_hint">循环次数</string>
@@ -110,7 +131,6 @@
     <string name="editor_minutes_short">%1$d 分钟</string>
     <string name="editor_volume_value">%1$d%%</string>
     <string name="editor_fade">渐强播放</string>
-    <string name="editor_fade_seconds">渐强时长 %1$d 秒</string>
     <string name="editor_snooze">稍后提醒</string>
     <string name="editor_snooze_hint">响铃界面会提供 5 分钟与 10 分钟两个选项。</string>
     <string name="editor_delete">删除闹钟</string>
@@ -131,9 +151,6 @@
     <string name="appearance_title">外观</string>
     <string name="appearance_subtitle">拟态配色 · 一处切换，全局生效</string>
     <string name="appearance_palette">配色主题</string>
-    <string name="appearance_preview_time">07:30</string>
-    <string name="appearance_preview_label">晨间闹钟</string>
-    <string name="appearance_preview_body">轻触切换配色，列表、编辑与响铃界面会同步更新。</string>
     <string name="appearance_tip">主题选择保存在本地设置文件中，重启后继续生效。</string>
     <string name="appearance_dark_badge">深色</string>
     <string name="appearance_light_badge">浅色</string>
@@ -155,6 +172,10 @@
     <string name="perm_wake">唤醒锁 · 锁屏时保持响铃</string>
     <string name="perm_install">安装未知应用 · 应用内更新</string>
     <string name="perm_internet">网络 · 检查和下载更新</string>
+    <string name="about_stat_themes">5 套主题</string>
+    <string name="about_stat_local">纯本地</string>
+    <string name="about_stat_no_account">无账号</string>
+    <string name="about_footer">为安静的早晨而生</string>
     <string name="about_section_update">应用更新</string>
     <string name="about_update_current">当前版本 %1$s</string>
     <string name="about_update_check">检查更新</string>
@@ -170,7 +191,6 @@
     <string name="about_update_installed">安装完成，新版本会在下次启动时生效</string>
     <string name="about_update_failed">更新失败：%1$s</string>
     <string name="about_update_not_configured">此构建未配置更新源</string>
-    <string name="about_update_notes">更新说明</string>
     <string name="about_update_permission_hint">需要允许“安装未知应用”后再安装</string>
     <string name="about_update_source">更新源 %1$s/%2$s</string>
     <string name="about_repo">项目主页</string>
@@ -195,6 +215,8 @@
     <string name="ring_now_playing_speech">正在朗读文字</string>
     <string name="ring_snooze_hint">稍后提醒</string>
     <string name="ring_stop_hint">停止本次响铃</string>
+    <string name="ring_stop_label">停止响铃</string>
+    <string name="ring_snooze_caption">再响一次</string>
     <string name="ring_audio_failed">音频播放失败，已改用震动提醒</string>
     <string name="ring_label_fallback">闹钟响了</string>
 
@@ -202,6 +224,10 @@
     <string name="channel_alarm_name">闹钟响铃</string>
     <string name="channel_alarm_description">闹钟触发时显示全屏提醒并播放声音</string>
     <string name="channel_status_name">闹钟状态</string>
+    <string name="channel_ongoing_name">闹钟响铃（常驻）</string>
+    <string name="channel_ongoing_description">响铃期间保持服务运行，不发出额外提示音</string>
+    <string name="notification_ongoing_title">闹钟响铃中</string>
+    <string name="notification_ongoing_text">%1$s · 点击停止或稍后提醒</string>
     <string name="channel_status_description">稍后提醒等状态提示</string>
     <string name="channel_update_name">应用更新</string>
     <string name="channel_update_description">下载新版本时的进度提示</string>

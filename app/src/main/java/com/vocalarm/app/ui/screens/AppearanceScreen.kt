@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,18 +25,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vocalarm.app.AppContainer
 import com.vocalarm.app.R
+import com.vocalarm.app.ui.Eyebrow
 import com.vocalarm.app.ui.TabBarSpacer
 import com.vocalarm.app.ui.neu.NeuCard
+import com.vocalarm.app.ui.neu.NeuIconTile
 import com.vocalarm.app.ui.neu.VIcon
 import com.vocalarm.app.ui.neu.VIconImage
 import com.vocalarm.app.ui.theme.LocalPalette
 import com.vocalarm.app.ui.theme.Palettes
+import com.vocalarm.app.ui.theme.TimeDisplayStyle
 import com.vocalarm.app.ui.theme.VocalarmPalette
 
 @Composable
@@ -46,61 +50,69 @@ fun AppearanceScreen(container: AppContainer, modifier: Modifier = Modifier) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item {
             Column {
+                Eyebrow(text = "VOCALARM", color = palette.accent)
+                Spacer(Modifier.height(8.dp))
                 Text(
                     text = stringResource(R.string.appearance_title),
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
                     color = palette.textPrimary,
                 )
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(4.dp))
                 Text(
                     text = stringResource(R.string.appearance_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = palette.muted,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.textSecondary,
                 )
             }
         }
+
         item {
             Text(
                 text = stringResource(R.string.appearance_palette),
-                modifier = Modifier.padding(start = 6.dp, top = 4.dp),
-                style = MaterialTheme.typography.labelMedium,
-                color = palette.muted,
+                modifier = Modifier.padding(start = 4.dp),
+                style = MaterialTheme.typography.titleMedium,
+                color = palette.textPrimary,
             )
         }
+
         item {
             PaletteGrid(
                 selectedId = settings.paletteId,
                 onSelect = { id -> container.settingsRepository.setPalette(id) },
             )
         }
-        item { PalettePreviewCard() }
+
         item {
             NeuCard(
                 modifier = Modifier.fillMaxWidth(),
                 radius = 22.dp,
                 depth = 5.dp,
-                contentPadding = PaddingValues(18.dp),
+                contentPadding = PaddingValues(16.dp),
             ) {
-                Text(
-                    text = stringResource(R.string.appearance_tip),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = palette.textSecondary,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    NeuIconTile(icon = VIcon.Droplet, size = 36.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = stringResource(R.string.appearance_tip),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textSecondary,
+                    )
+                }
             }
         }
+
         item { TabBarSpacer() }
     }
 }
 
 @Composable
 private fun PaletteGrid(selectedId: String, onSelect: (String) -> Unit) {
-    val rows = Palettes.all.chunked(2)
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        rows.forEach { row ->
+        Palettes.all.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 row.forEach { palette ->
                     PaletteCard(
@@ -125,27 +137,72 @@ private fun PaletteCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(24.dp)
+    val shape = RoundedCornerShape(22.dp)
     Box(
         modifier = modifier
-            .height(124.dp)
+            .height(164.dp)
             .clip(shape)
             .background(palette.background)
-            .then(
-                if (selected) {
-                    Modifier.border(2.dp, palette.accent, shape)
-                } else {
-                    Modifier
-                },
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) palette.accent else palette.darkShadow.copy(alpha = 0.35f),
+                shape = shape,
             )
             .clickable(onClick = onClick)
-            .padding(16.dp),
+            .padding(14.dp),
     ) {
         Column(Modifier.fillMaxSize()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Swatch(color = palette.background, outline = palette.darkShadow)
-                Swatch(color = palette.accent)
-                Swatch(color = palette.textPrimary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "07:30",
+                    style = TimeDisplayStyle.copy(fontSize = 28.sp, lineHeight = 32.sp),
+                    color = palette.textPrimary,
+                )
+                Spacer(Modifier.weight(1f))
+                Box(
+                    Modifier
+                        .size(9.dp)
+                        .clip(CircleShape)
+                        .background(palette.accent),
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp)
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(palette.surface)
+                    .border(1.dp, palette.darkShadow.copy(alpha = 0.18f), RoundedCornerShape(13.dp))
+                    .padding(horizontal = 10.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Box(
+                            Modifier
+                                .width(34.dp)
+                                .height(5.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(palette.accent),
+                        )
+                        Spacer(Modifier.height(5.dp))
+                        Box(
+                            Modifier
+                                .width(52.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(palette.textSecondary.copy(alpha = 0.35f)),
+                        )
+                    }
+                    Box(
+                        Modifier
+                            .width(24.dp)
+                            .height(13.dp)
+                            .clip(CircleShape)
+                            .background(palette.accent.copy(alpha = 0.85f)),
+                    )
+                }
             }
             Spacer(Modifier.weight(1f))
             Text(
@@ -165,7 +222,7 @@ private fun PaletteCard(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .size(22.dp)
+                    .size(21.dp)
                     .clip(CircleShape)
                     .background(palette.accent),
                 contentAlignment = Alignment.Center,
@@ -173,98 +230,9 @@ private fun PaletteCard(
                 VIconImage(
                     icon = VIcon.Check,
                     tint = palette.onAccent,
-                    modifier = Modifier.size(14.dp),
+                    modifier = Modifier.size(13.dp),
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun Swatch(color: Color, outline: Color? = null) {
-    Box(
-        modifier = Modifier
-            .size(18.dp)
-            .clip(CircleShape)
-            .background(color)
-            .then(
-                if (outline != null) {
-                    Modifier.border(1.dp, outline, CircleShape)
-                } else {
-                    Modifier
-                },
-            ),
-    )
-}
-
-@Composable
-private fun PalettePreviewCard() {
-    val palette = LocalPalette.current
-    NeuCard(
-        modifier = Modifier.fillMaxWidth(),
-        radius = 26.dp,
-        depth = 7.dp,
-        contentPadding = PaddingValues(20.dp),
-    ) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                VIconImage(icon = VIcon.Bell, tint = palette.accent, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.size(8.dp))
-                Text(
-                    text = stringResource(R.string.appearance_preview_label),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = palette.muted,
-                )
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = stringResource(R.string.appearance_preview_time),
-                    style = MaterialTheme.typography.displayLarge,
-                    color = palette.textPrimary,
-                )
-                Spacer(Modifier.weight(1f))
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(palette.accent.copy(alpha = 0.14f))
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                ) {
-                    Text(
-                        text = stringResource(R.string.home_alarm_on),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.accent,
-                    )
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = stringResource(R.string.appearance_preview_body),
-                style = MaterialTheme.typography.bodyMedium,
-                color = palette.textSecondary,
-            )
-            Spacer(Modifier.height(14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PreviewChip(stringResource(R.string.appearance_light_badge), selected = !palette.isDark)
-                PreviewChip(stringResource(R.string.appearance_dark_badge), selected = palette.isDark)
-            }
-        }
-    }
-}
-
-@Composable
-private fun PreviewChip(text: String, selected: Boolean) {
-    val palette = LocalPalette.current
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) palette.accent.copy(alpha = 0.14f) else Color.Transparent)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) palette.accent else palette.muted,
-        )
     }
 }

@@ -30,7 +30,7 @@
 | 14 | 锁屏 / 后台正常触发 | `alarm/AlarmScheduler.kt`、`AlarmService.kt`、`AlarmReceiver.kt`、`BootReceiver.kt` | `setAlarmClock` + 前台服务 + 全屏通知 + 唤醒锁 + 开机恢复 |
 | 15 | 本地存储、无需账号 | `data/JsonStore.kt`、`AlarmRepository.kt`、`SettingsRepository.kt`、`RecordingStore.kt` | 原子写 JSON + 本地 m4a；无网络账号 |
 
-界面：全部组件自绘（双阴影拟态、自绘图标、滚轮、开关、滑杆、输入框），只有 Compose 官方 `foundation` / `material3` 的文本与主题骨架，没有第三方 UI 库或 DI 框架。
+界面：全部组件自绘（双阴影拟态、自绘图标、滚轮、开关、滑杆、输入框），只有 Compose 官方 `foundation` / `material3` 的文本与主题骨架，没有第三方 UI 库或 DI 框架。应用图标与页内标识共用「柔光表盘 + V 形指针」语言，自适应图标、单色图标与 Android 12 启动屏保持一致。
 
 ---
 
@@ -264,7 +264,7 @@ base64 -w0 vocalarm-release.jks
 | Debug 编译 | `./gradlew clean assembleDebug` | **成功，0 编译警告**（Kotlin `allWarningsAsErrors = true`） |
 | 单元测试 | `./gradlew cleanTest test` | **59 个测试，0 失败** |
 | Lint | `./gradlew lintRelease` | **0 error，1 warning**（仅提示 Gradle 9.8.2 可升级；`mipmap-anydpi-v26` 的目录提示已按 `app/lint.xml` 说明性豁免） |
-| R8 体积 | `./gradlew assembleRelease` | 未混淆 8.28MB → R8 **1.30MB**（DEX 原始 22.0MB → 2.1MB） |
+| R8 体积 | `./gradlew assembleRelease` | 未混淆 8.28MB → R8 **约 1.5MB**（含图标 PNG；DEX 原始 22.0MB → 2.1MB） |
 | R8 运行时保留 | 解析 APK 的 DEX 与 ServiceLoader | Manifest 组件、`MainDispatcherFactory` / `AndroidDispatcherFactory` 均在；服务文件未被错误改写 |
 | Release 签名（本地通道） | `./gradlew assembleRelease` + `keystore.properties` | **成功**，`apksigner` 校验 V2 签名通过 |
 | Release 元数据 | `aapt2 dump badging` | `versionName=1.2.3`、`versionCode=10203`、包名 `com.vocalarm.app` |
@@ -310,7 +310,7 @@ base64 -w0 vocalarm-release.jks
 - **更新源可达性**：应用内更新直接访问 `api.github.com` 与 Release 资产地址；所在网络无法访问 GitHub 时会显示网络错误。
 - **Gradle 9.8.1**：Lint 提示 9.8.2 可用；本机下载 9.8.2 分发包超时，为保证可复现构建固定 9.8.1。升级只需改 `gradle-wrapper.properties` 并提交。
 - **图标目录**：自适应图标必须放在 `mipmap-anydpi-v26`；尝试按 Lint 建议移到 `mipmap-anydpi` 会导致 AAPT2 找不到资源（已用 clean build 复现），因此在 `app/lint.xml` 中记录了豁免原因。
-- **R8 已启用**：release 开启 `isMinifyEnabled` 与 `isShrinkResources`，APK 约 1.3MB；CI 会保留 `mapping-<version>` artifact，崩溃堆栈可用其中的 `mapping.txt` 还原。
+- **R8 已启用**：release 开启 `isMinifyEnabled` 与 `isShrinkResources`，APK 约 1.5MB；CI 会保留 `mapping-<version>` artifact，崩溃堆栈可用其中的 `mapping.txt` 还原。
 
 ---
 

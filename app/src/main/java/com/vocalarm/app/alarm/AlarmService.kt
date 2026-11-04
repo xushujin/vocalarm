@@ -41,6 +41,7 @@ class AlarmService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var vibrator: Vibrator? = null
     private var activeAlarm: Alarm? = null
+    private var fullScreenVisible = false
 
     override fun onCreate() {
         super.onCreate()
@@ -71,6 +72,15 @@ class AlarmService : Service() {
                     minutes = intent.getIntExtra(EXTRA_MINUTES, 5),
                     requestedAlarmId = intent.getStringExtra(EXTRA_ALARM_ID),
                 )
+            }
+
+            ACTION_SCREEN_SHOWN -> {
+                val alarm = activeAlarm
+                if (alarm == null) {
+                    stopSelf()
+                } else {
+                    cancelFullScreenNotification()
+                }
             }
 
             else -> stopSelf()
@@ -109,7 +119,8 @@ class AlarmService : Service() {
             }
         }
 
-        startForegroundCompat(buildAlarmNotification(alarm))
+        startForegroundCompat(buildOngoingNotification(alarm))
+        postFullScreenNotification(alarm)
         launchRingScreen(alarm)
         acquireWakeLock()
         ringJob = scope.launch { playUntilFinished(alarm) }
@@ -159,6 +170,7 @@ class AlarmService : Service() {
         vibrator?.cancel()
         vibrator = null
         activeAlarm = null
+        cancelFullScreenNotification()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -197,8 +209,24 @@ class AlarmService : Service() {
     }
 
     private fun updateNotification(alarm: Alarm, message: String) {
-        val manager = getSystemService(android.app.NotificationManager::class.java)
-        manager?.notify(NOTIFICATION_ID, buildAlarmNotification(alarm, message))
+        val manager = getSystemService(android.app.NotificationManager::class.java) ?: return
+        manager.notify(NOTIFICATION_ID, buildOngoingNotification(alarm, message))
+        if (fullScreenVisible) {
+            manager.notify(FULLSCREEN_NOTIFICATION_ID, buildFullScreenNotification(alarm, message))
+        }
+    }
+
+    private fun postFullScreenNotification(alarm: Alarm) {
+        val manager = getSystemService(android.app.NotificationManager::class.java) ?: return
+        manager.notify(FULLSCREEN_NOTIFICATION_ID, buildFullScreenNotification(alarm))
+        fullScreenVisible = true
+    }
+
+    private fun cancelFullScreenNotification() {
+        if (!fullScreenVisible) return
+        getSystemService(android.app.NotificationManager::class.java)
+            ?.cancel(FULLSCREEN_NOTIFICATION_ID)
+        fullScreenVisible = false
     }
 
     private fun postSnoozedNotification(minutes: Int) {
@@ -214,24 +242,18 @@ class AlarmService : Service() {
     }
 
     private fun buildPreparingNotification(): Notification =
-        Notification.Builder(this, NotificationChannels.ALARM)
+        Notification.Builder(this, NotificationChannels.ALARM_ONGOING)
             .setSmallIcon(R.drawable.ic_stat_alarm)
             .setContentTitle(getString(R.string.notification_preparing))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .build()
 
-    private fun buildAlarmNotification(alarm: Alarm, message: String? = null): Notification {
+    private fun buildFullScreenNotification(alarm: Alarm, message: String? = null): Notification {
         val fullScreen = PendingIntent.getActivity(
             this,
             REQUEST_RING_SCREEN,
             AlarmRingActivity.createIntent(this, alarm.id),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val stopIntent = PendingIntent.getService(
-            this,
-            REQUEST_STOP,
-            Intent(this, AlarmService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val actionIcon = Icon.createWithResource(this, R.drawable.ic_stat_alarm)
@@ -258,7 +280,45 @@ class AlarmService : Service() {
             .setShowWhen(false)
             .setFullScreenIntent(fullScreen, true)
             .setContentIntent(fullScreen)
-            .addAction(Notification.Action.Builder(actionIcon, getString(R.string.action_stop), stopIntent).build())
+        notificationActions(alarm, actionIcon).forEach(builder::addAction)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+        }
+        return builder.build()
+    }
+
+    private fun buildOngoingNotification(alarm: Alarm, message: String? = null): Notification {
+        val content = PendingIntent.getActivity(
+            this,
+            REQUEST_RING_SCREEN,
+            AlarmRingActivity.createIntent(this, alarm.id),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val icon = Icon.createWithResource(this, R.drawable.ic_stat_alarm)
+        val builder = Notification.Builder(this, NotificationChannels.ALARM_ONGOING)
+            .setSmallIcon(R.drawable.ic_stat_alarm)
+            .setContentTitle(alarm.label.ifBlank { getString(R.string.notification_ongoing_title) })
+            .setContentText(message ?: getString(R.string.notification_ongoing_text, alarm.timeText))
+            .setCategory(Notification.CATEGORY_ALARM)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setContentIntent(content)
+        notificationActions(alarm, icon).forEach(builder::addAction)
+        return builder.build()
+    }
+
+    private fun notificationActions(alarm: Alarm, icon: Icon): List<Notification.Action> {
+        val stopIntent = PendingIntent.getService(
+            this,
+            REQUEST_STOP,
+            Intent(this, AlarmService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val actions = mutableListOf(
+            Notification.Action.Builder(icon, getString(R.string.action_stop), stopIntent).build(),
+        )
         alarm.snoozeMinutes.forEachIndexed { index, minutes ->
             val snoozeIntent = PendingIntent.getService(
                 this,
@@ -268,18 +328,13 @@ class AlarmService : Service() {
                     .putExtra(EXTRA_MINUTES, minutes),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
-            builder.addAction(
-                Notification.Action.Builder(
-                    actionIcon,
-                    getString(R.string.action_snooze, minutes),
-                    snoozeIntent,
-                ).build(),
-            )
+            actions += Notification.Action.Builder(
+                icon,
+                getString(R.string.action_snooze, minutes),
+                snoozeIntent,
+            ).build()
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
-        }
-        return builder.build()
+        return actions
     }
 
     private fun startForegroundCompat(notification: Notification) {
@@ -298,12 +353,14 @@ class AlarmService : Service() {
         const val ACTION_START = "com.vocalarm.app.action.START_RINGING"
         const val ACTION_STOP = "com.vocalarm.app.action.STOP_RINGING"
         const val ACTION_SNOOZE = "com.vocalarm.app.action.SNOOZE_RINGING"
+        const val ACTION_SCREEN_SHOWN = "com.vocalarm.app.action.RING_SCREEN_SHOWN"
         const val EXTRA_ALARM_ID = "extra_alarm_id"
         const val EXTRA_SNOOZE = "extra_snooze"
         const val EXTRA_MINUTES = "extra_minutes"
 
         private const val NOTIFICATION_ID = 1001
         private const val SNOOZE_NOTIFICATION_ID = 1002
+        private const val FULLSCREEN_NOTIFICATION_ID = 1004
         private const val REQUEST_RING_SCREEN = 11
         private const val REQUEST_STOP = 12
         private const val REQUEST_SNOOZE_BASE = 20
@@ -322,6 +379,11 @@ class AlarmService : Service() {
         fun stop(context: Context) {
             val intent = Intent(context, AlarmService::class.java).setAction(ACTION_STOP)
             ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun screenShown(context: Context) {
+            val intent = Intent(context, AlarmService::class.java).setAction(ACTION_SCREEN_SHOWN)
+            runCatching { context.startService(intent) }
         }
 
         fun snooze(context: Context, minutes: Int, alarmId: String) {

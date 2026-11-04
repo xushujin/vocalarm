@@ -20,32 +20,45 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 
+/**
+ * A tighter, more editorial scale than the Material default: very light display numerals for the
+ * clock, compact labels with generous tracking, and body copy with enough leading to breathe.
+ */
 val VocalarmTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Light,
-        fontSize = 60.sp,
-        lineHeight = 64.sp,
-        letterSpacing = (-2).sp,
+        fontSize = 64.sp,
+        lineHeight = 68.sp,
+        letterSpacing = (-2.6).sp,
     ),
     displayMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Light,
         fontSize = 44.sp,
         lineHeight = 50.sp,
-        letterSpacing = (-1).sp,
+        letterSpacing = (-1.4).sp,
+    ),
+    headlineLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 30.sp,
+        lineHeight = 36.sp,
+        letterSpacing = (-0.9).sp,
     ),
     headlineMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 26.sp,
-        lineHeight = 32.sp,
+        fontSize = 24.sp,
+        lineHeight = 30.sp,
+        letterSpacing = (-0.5).sp,
     ),
     titleLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 20.sp,
-        lineHeight = 26.sp,
+        fontSize = 19.sp,
+        lineHeight = 25.sp,
+        letterSpacing = (-0.2).sp,
     ),
     titleMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
@@ -56,45 +69,61 @@ val VocalarmTypography = Typography(
     bodyLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
+        fontSize = 15.sp,
+        lineHeight = 23.sp,
     ),
     bodyMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
-        lineHeight = 21.sp,
+        lineHeight = 22.sp,
+    ),
+    bodySmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp,
+        lineHeight = 18.sp,
     ),
     labelLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp,
         lineHeight = 18.sp,
+        letterSpacing = 0.1.sp,
     ),
     labelMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Medium,
         fontSize = 12.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.4.sp,
+        letterSpacing = 0.7.sp,
     ),
     labelSmall = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Medium,
         fontSize = 11.sp,
         lineHeight = 14.sp,
-        letterSpacing = 0.6.sp,
+        letterSpacing = 0.9.sp,
     ),
 )
 
-/** Tabular figures keep the large clock from jittering while the minute changes. */
+/** Clock numerals: tabular so the minute never shifts the layout. */
 val TimeDisplayStyle = TextStyle(
     fontFamily = FontFamily.SansSerif,
     fontWeight = FontWeight.Light,
-    fontSize = 62.sp,
-    lineHeight = 68.sp,
-    letterSpacing = (-2).sp,
+    fontSize = 66.sp,
+    lineHeight = 72.sp,
+    letterSpacing = (-2.6).sp,
     fontFeatureSettings = "tnum",
+)
+
+/** Small all-caps label used for section eyebrows. */
+val EyebrowStyle = TextStyle(
+    fontFamily = FontFamily.SansSerif,
+    fontWeight = FontWeight.SemiBold,
+    fontSize = 10.sp,
+    lineHeight = 14.sp,
+    letterSpacing = 2.4.sp,
 )
 
 fun VocalarmPalette.toColorScheme() = if (isDark) {
@@ -105,10 +134,11 @@ fun VocalarmPalette.toColorScheme() = if (isDark) {
         onSecondary = background,
         background = background,
         onBackground = textPrimary,
-        surface = background,
+        surface = surface,
         onSurface = textPrimary,
-        surfaceVariant = track,
+        surfaceVariant = surfaceHigh,
         onSurfaceVariant = textSecondary,
+        outline = hairline,
         error = danger,
         onError = Color.White,
     )
@@ -120,10 +150,11 @@ fun VocalarmPalette.toColorScheme() = if (isDark) {
         onSecondary = background,
         background = background,
         onBackground = textPrimary,
-        surface = background,
+        surface = surface,
         onSurface = textPrimary,
-        surfaceVariant = track,
+        surfaceVariant = surfaceHigh,
         onSurfaceVariant = textSecondary,
+        outline = hairline,
         error = danger,
         onError = Color.White,
     )

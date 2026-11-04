@@ -5,10 +5,12 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,7 +21,6 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -32,8 +33,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -42,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -53,8 +55,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -75,7 +79,10 @@ import kotlin.math.roundToInt
 
 enum class NeuTone { Raised, Inset }
 
-/** Soft shadow layers. Drawn from the outermost layer inwards so the alpha accumulates near the edge. */
+/**
+ * Soft shadow built from expanding rounded rects. The falloff is quadratic and the offset is
+ * biased downwards, which reads as a real light source instead of an even glow around the card.
+ */
 internal fun DrawScope.drawNeuShadow(
     color: Color,
     rect: Rect,
@@ -87,11 +94,10 @@ internal fun DrawScope.drawNeuShadow(
 ) {
     if (blur <= 0f || peakAlpha <= 0f) return
     val count = layers.coerceAtLeast(1)
-    val perLayer = peakAlpha * 2.1f / count
     for (index in count downTo 1) {
         val t = index.toFloat() / count
         val grow = blur * t
-        val alpha = (perLayer * (1f - t * 0.55f)).coerceIn(0f, 1f)
+        val alpha = (peakAlpha * 2.7f * (1f - t) * (1f - t) / count).coerceIn(0f, 1f)
         drawRoundRect(
             color = color.copy(alpha = alpha),
             topLeft = Offset(rect.left - grow + offset.x, rect.top - grow + offset.y),
@@ -103,13 +109,14 @@ internal fun DrawScope.drawNeuShadow(
 
 fun Modifier.neuSurface(
     palette: VocalarmPalette,
-    fill: Color = palette.background,
+    fill: Color = palette.surface,
     radius: Dp = 24.dp,
     tone: NeuTone = NeuTone.Raised,
     depth: Dp = 7.dp,
-    blur: Dp = 16.dp,
+    blur: Dp = 18.dp,
     circle: Boolean = false,
     layers: Int = 12,
+    glowColor: Color? = null,
 ): Modifier = this.drawWithCache {
     val corner = if (circle) min(size.width, size.height) / 2f else radius.toPx()
     val depthPx = depth.toPx()
@@ -121,29 +128,54 @@ fun Modifier.neuSurface(
     onDrawBehind {
         when (tone) {
             NeuTone.Raised -> {
+                if (glowColor != null) {
+                    drawNeuShadow(
+                        color = glowColor,
+                        rect = rect,
+                        cornerRadius = corner,
+                        offset = Offset(0f, depthPx * 1.35f),
+                        blur = blurPx * 1.15f,
+                        layers = layers,
+                        peakAlpha = 0.26f,
+                    )
+                }
                 drawNeuShadow(
                     color = dark,
                     rect = rect,
                     cornerRadius = corner,
-                    offset = Offset(depthPx, depthPx),
-                    blur = blurPx,
+                    offset = Offset(depthPx * 0.18f, depthPx * 0.88f),
+                    blur = blurPx * 0.92f,
                     layers = layers,
-                    peakAlpha = palette.darkShadowAlpha,
+                    peakAlpha = palette.darkShadowAlpha * 0.82f,
                 )
                 drawNeuShadow(
                     color = light,
                     rect = rect,
                     cornerRadius = corner,
-                    offset = Offset(-depthPx, -depthPx),
-                    blur = blurPx,
+                    offset = Offset(-depthPx * 0.32f, -depthPx * 0.38f),
+                    blur = blurPx * 0.52f,
                     layers = layers,
-                    peakAlpha = palette.lightShadowAlpha,
+                    peakAlpha = palette.lightShadowAlpha * 0.30f,
                 )
                 drawRoundRect(
                     color = fill,
                     topLeft = Offset.Zero,
                     size = size,
                     cornerRadius = CornerRadius(corner),
+                )
+                // A hairline rim catches the light on the top edge and seats the card at the bottom.
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            light.copy(alpha = 0.40f),
+                            Color.Transparent,
+                            dark.copy(alpha = 0.10f),
+                        ),
+                    ),
+                    topLeft = Offset(0.75f, 0.75f),
+                    size = Size(size.width - 1.5f, size.height - 1.5f),
+                    cornerRadius = CornerRadius(corner - 0.75f),
+                    style = Stroke(width = 1.2f),
                 )
             }
 
@@ -155,11 +187,11 @@ fun Modifier.neuSurface(
                     cornerRadius = CornerRadius(corner),
                 )
                 clipPath(shapePath) {
-                    val spread = blurPx * 1.1f
+                    val spread = blurPx * 1.15f
                     drawRect(
                         brush = Brush.linearGradient(
                             colors = listOf(
-                                dark.copy(alpha = palette.darkShadowAlpha * 0.85f),
+                                dark.copy(alpha = palette.darkShadowAlpha * 0.72f),
                                 Color.Transparent,
                             ),
                             start = Offset(0f, 0f),
@@ -170,13 +202,26 @@ fun Modifier.neuSurface(
                         brush = Brush.linearGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                light.copy(alpha = palette.lightShadowAlpha * 0.65f),
+                                light.copy(alpha = palette.lightShadowAlpha * 0.62f),
                             ),
                             start = Offset(size.width - spread, size.height - spread),
                             end = Offset(size.width, size.height),
                         ),
                     )
                 }
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            dark.copy(alpha = 0.12f),
+                            Color.Transparent,
+                            light.copy(alpha = 0.20f),
+                        ),
+                    ),
+                    topLeft = Offset(0.75f, 0.75f),
+                    size = Size(size.width - 1.5f, size.height - 1.5f),
+                    cornerRadius = CornerRadius(corner - 0.75f),
+                    style = Stroke(width = 1f),
+                )
             }
         }
     }
@@ -188,15 +233,22 @@ fun NeuCard(
     radius: Dp = 26.dp,
     depth: Dp = 7.dp,
     tone: NeuTone = NeuTone.Raised,
-    fill: Color = LocalPalette.current.background,
+    fill: Color = LocalPalette.current.surface,
     contentPadding: PaddingValues = PaddingValues(20.dp),
     onClick: (() -> Unit)? = null,
+    glow: Color? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val palette = LocalPalette.current
     val metrics = LocalNeuMetrics.current
     val shape = remember(radius) { RoundedCornerShape(radius) }
     val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val animatedDepth by animateDpAsState(
+        targetValue = if (pressed && onClick != null && tone == NeuTone.Raised) depth * 0.45f else depth,
+        animationSpec = spring(stiffness = 900f),
+        label = "cardDepth",
+    )
     val clickable = if (onClick == null) {
         Modifier
     } else {
@@ -209,8 +261,17 @@ fun NeuCard(
     }
     Box(
         modifier = modifier
-            .neuSurface(palette, fill, radius, tone, depth, metrics.blur)
+            .neuSurface(
+                palette = palette,
+                fill = fill,
+                radius = radius,
+                tone = tone,
+                depth = animatedDepth,
+                blur = metrics.blur,
+                glowColor = glow,
+            )
             .clip(shape)
+            .border(1.dp, palette.hairline.copy(alpha = 0.30f), shape)
             .then(clickable)
             .padding(contentPadding),
         content = content,
@@ -234,17 +295,18 @@ fun NeuButton(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val depth by animateDpAsState(
-        targetValue = if (pressed) 3.dp else 6.dp,
+        targetValue = if (pressed) 2.dp else 6.dp,
         animationSpec = spring(stiffness = 900f),
         label = "buttonDepth",
     )
-    val fill = fillColor ?: if (accent) palette.accent else palette.background
+    val fill = fillColor ?: if (accent) palette.accent else palette.surface
     val contentColor = when {
         !enabled -> palette.muted
         contentTint != null -> contentTint
         accent -> palette.onAccent
         else -> palette.textPrimary
     }
+    val shape = RoundedCornerShape(height / 2)
     Row(
         modifier = modifier
             .height(height)
@@ -253,11 +315,21 @@ fun NeuButton(
                 palette = palette,
                 fill = fill,
                 radius = height / 2,
-                tone = if (pressed) NeuTone.Inset else NeuTone.Raised,
+                tone = NeuTone.Raised,
                 depth = depth,
                 blur = metrics.blur,
+                glowColor = if (accent && enabled) palette.accent.copy(alpha = 0.55f) else null,
             )
-            .clip(RoundedCornerShape(height / 2))
+            .clip(shape)
+            .then(
+                if (accent && enabled && fillColor == null) {
+                    Modifier
+                        .background(palette.accentGradient, shape)
+                        .border(1.dp, Color.White.copy(alpha = 0.18f), shape)
+                } else {
+                    Modifier
+                },
+            )
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -313,14 +385,24 @@ fun NeuIconButton(
             .size(size)
             .neuSurface(
                 palette = palette,
-                fill = if (accent) palette.accent else palette.background,
+                fill = if (accent) palette.accent else palette.surface,
                 radius = size / 2,
-                tone = if (pressed) NeuTone.Inset else NeuTone.Raised,
+                tone = NeuTone.Raised,
                 depth = depth,
                 blur = metrics.blur,
                 circle = true,
+                glowColor = if (accent && enabled) palette.accent.copy(alpha = 0.55f) else null,
             )
             .clip(CircleShape)
+            .then(
+                if (accent && enabled) {
+                    Modifier
+                        .background(palette.accentGradient, CircleShape)
+                        .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape)
+                } else {
+                    Modifier
+                },
+            )
             .semantics { this.contentDescription = contentDescription }
             .clickable(
                 interactionSource = interaction,
@@ -344,14 +426,14 @@ fun NeuSwitch(
 ) {
     val palette = LocalPalette.current
     val knobOffset by animateDpAsState(
-        targetValue = if (checked) 26.dp else 3.dp,
-        animationSpec = spring(stiffness = 700f, dampingRatio = 0.8f),
+        targetValue = if (checked) 25.dp else 3.dp,
+        animationSpec = spring(stiffness = 700f, dampingRatio = 0.82f),
         label = "switchKnob",
     )
     val trackFill by animateColorAsState(
         targetValue = when {
             !enabled -> palette.track
-            checked -> palette.accent.copy(alpha = 0.92f)
+            checked -> palette.accent
             else -> palette.background
         },
         label = "switchTrack",
@@ -359,7 +441,7 @@ fun NeuSwitch(
     Box(
         modifier = modifier
             .minimumInteractiveComponentSize()
-            .size(56.dp, 32.dp)
+            .size(54.dp, 31.dp)
             .neuSurface(
                 palette = palette,
                 fill = trackFill,
@@ -368,6 +450,13 @@ fun NeuSwitch(
                 depth = 4.dp,
             )
             .clip(CircleShape)
+            .then(
+                if (checked && enabled) {
+                    Modifier.background(palette.accentGradient, CircleShape)
+                } else {
+                    Modifier
+                },
+            )
             .toggleable(
                 value = checked,
                 enabled = enabled,
@@ -377,17 +466,15 @@ fun NeuSwitch(
     ) {
         Box(
             modifier = Modifier
-                .offset {
-                    IntOffset(knobOffset.roundToPx(), 3.dp.roundToPx())
-                }
-                .size(26.dp)
+                .offset { IntOffset(knobOffset.roundToPx(), 3.dp.roundToPx()) }
+                .size(25.dp)
                 .neuSurface(
                     palette = palette,
-                    fill = if (checked) palette.onAccent else palette.background,
+                    fill = palette.surfaceHigh,
                     radius = 13.dp,
                     tone = NeuTone.Raised,
                     depth = 3.dp,
-                    blur = 8.dp,
+                    blur = 9.dp,
                     circle = true,
                 )
                 .clip(CircleShape),
@@ -449,9 +536,9 @@ fun NeuSlider(
             },
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            val trackHeight = 14.dp.toPx()
+            val trackHeight = 12.dp.toPx()
             val centerY = size.height / 2f
-            val thumbRadius = 12.dp.toPx()
+            val thumbRadius = 13.dp.toPx()
             val inset = thumbRadius
             val trackWidth = size.width - thumbRadius * 2f
             val trackRect = Rect(
@@ -469,7 +556,7 @@ fun NeuSlider(
             drawRect(
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        palette.darkShadow.copy(alpha = palette.darkShadowAlpha * 0.5f),
+                        palette.darkShadow.copy(alpha = palette.darkShadowAlpha * 0.45f),
                         Color.Transparent,
                     ),
                     startY = trackRect.top,
@@ -479,9 +566,13 @@ fun NeuSlider(
                 size = Size(trackRect.width, trackHeight / 2f),
             )
             val activeWidth = trackWidth * fraction
-            if (activeWidth > 0f) {
+            if (activeWidth > 0f && enabled) {
                 drawRoundRect(
-                    color = palette.accent.copy(alpha = if (enabled) 0.95f else 0.4f),
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(palette.accent, palette.accentDeep),
+                        startX = trackRect.left,
+                        endX = trackRect.left + activeWidth.coerceAtLeast(1f),
+                    ),
                     topLeft = trackRect.topLeft,
                     size = Size(activeWidth, trackHeight),
                     cornerRadius = CornerRadius(trackHeight / 2f),
@@ -497,19 +588,19 @@ fun NeuSlider(
                     thumbCenter.y + thumbRadius,
                 ),
                 cornerRadius = thumbRadius,
-                offset = Offset(3.dp.toPx(), 3.dp.toPx()),
-                blur = 8.dp.toPx(),
-                layers = 8,
+                offset = Offset(2.5.dp.toPx(), 4.dp.toPx()),
+                blur = 9.dp.toPx(),
+                layers = 9,
                 peakAlpha = palette.darkShadowAlpha * 0.8f,
             )
             drawCircle(
-                color = if (enabled) palette.background else palette.track,
+                color = if (enabled) palette.surfaceHigh else palette.track,
                 radius = thumbRadius,
                 center = thumbCenter,
             )
             drawCircle(
-                color = palette.accent.copy(alpha = if (enabled) 0.9f else 0.35f),
-                radius = 4.dp.toPx(),
+                color = palette.accent.copy(alpha = if (enabled) 0.95f else 0.35f),
+                radius = 4.5.dp.toPx(),
                 center = thumbCenter,
             )
         }
@@ -531,26 +622,37 @@ fun NeuChip(
     val fill = when {
         !enabled -> palette.track
         selected -> palette.accent
-        else -> palette.background
+        else -> palette.surface
     }
     val textColor = when {
         !enabled -> palette.muted
         selected -> palette.onAccent
         else -> palette.textSecondary
     }
+    val shape = RoundedCornerShape(22.dp)
     Box(
         modifier = modifier
-            .height(42.dp)
+            .height(44.dp)
             .defaultMinSize(minWidth = 64.dp)
             .neuSurface(
                 palette = palette,
                 fill = fill,
-                radius = 21.dp,
-                tone = if (pressed) NeuTone.Inset else NeuTone.Raised,
+                radius = 22.dp,
+                tone = NeuTone.Raised,
                 depth = if (pressed) 2.dp else 4.dp,
                 blur = metrics.blur,
+                glowColor = if (selected) palette.accent.copy(alpha = 0.40f) else null,
             )
-            .clip(RoundedCornerShape(21.dp))
+            .clip(shape)
+            .then(
+                if (selected && enabled) {
+                    Modifier
+                        .background(palette.accentGradient, shape)
+                        .border(1.dp, Color.White.copy(alpha = 0.18f), shape)
+                } else {
+                    Modifier.border(1.dp, palette.hairline, shape)
+                },
+            )
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -587,19 +689,28 @@ fun NeuTextField(
 ) {
     val palette = LocalPalette.current
     val metrics = LocalNeuMetrics.current
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
     val baseStyle = textStyle ?: MaterialTheme.typography.bodyLarge
+    val shape = RoundedCornerShape(18.dp)
     Row(
         modifier = modifier
             .fillMaxWidth()
             .neuSurface(
                 palette = palette,
                 fill = palette.background,
-                radius = 20.dp,
+                radius = 18.dp,
                 tone = NeuTone.Inset,
                 depth = 4.dp,
                 blur = metrics.blur,
             )
-            .padding(horizontal = 18.dp, vertical = 14.dp),
+            .clip(shape)
+            .border(
+                width = 1.dp,
+                color = if (focused) palette.accent.copy(alpha = 0.55f) else Color.Transparent,
+                shape = shape,
+            )
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.weight(1f)) {
@@ -614,6 +725,7 @@ fun NeuTextField(
                 onValueChange = onValueChange,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = enabled,
+                interactionSource = interaction,
                 textStyle = baseStyle.copy(color = palette.textPrimary),
                 cursorBrush = SolidColor(palette.accent),
                 singleLine = singleLine,
@@ -627,6 +739,32 @@ fun NeuTextField(
             Spacer(Modifier.width(8.dp))
             trailing()
         }
+    }
+}
+
+/** A tinted, soft-cornered tile used to anchor section headers. */
+@Composable
+fun NeuIconTile(
+    icon: VIcon,
+    modifier: Modifier = Modifier,
+    size: Dp = 40.dp,
+    tint: Color = LocalPalette.current.accent,
+) {
+    val palette = LocalPalette.current
+    val shape = RoundedCornerShape(size * 0.34f)
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(shape)
+            .background(
+                Brush.linearGradient(
+                    listOf(palette.accentTint, palette.accentTint.copy(alpha = 0.55f)),
+                ),
+            )
+            .border(1.dp, tint.copy(alpha = 0.10f), shape),
+        contentAlignment = Alignment.Center,
+    ) {
+        VIconImage(icon = icon, tint = tint, modifier = Modifier.size(size * 0.46f))
     }
 }
 
@@ -647,15 +785,41 @@ fun NeuScreenBackground(modifier: Modifier = Modifier, content: @Composable BoxS
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        palette.background,
-                        palette.background,
-                        palette.background.copy(alpha = 0.96f),
+            .drawBehind {
+                drawRect(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            palette.background,
+                            palette.background,
+                            palette.background,
+                        ),
                     ),
-                ),
-            ),
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            palette.accent.copy(alpha = if (palette.isDark) 0.14f else 0.08f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(size.width * 0.86f, size.height * 0.02f),
+                        radius = size.width * 0.72f,
+                    ),
+                    radius = size.width * 0.72f,
+                    center = Offset(size.width * 0.86f, size.height * 0.02f),
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            palette.lightShadow.copy(alpha = if (palette.isDark) 0.05f else 0.30f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(size.width * 0.08f, size.height * 0.92f),
+                        radius = size.width * 0.7f,
+                    ),
+                    radius = size.width * 0.7f,
+                    center = Offset(size.width * 0.08f, size.height * 0.92f),
+                )
+            },
         content = content,
     )
 }
@@ -685,7 +849,15 @@ fun NeuDivider(modifier: Modifier = Modifier) {
         modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(palette.darkShadow.copy(alpha = 0.18f)),
+            .background(
+                Brush.horizontalGradient(
+                    listOf(
+                        Color.Transparent,
+                        palette.hairline,
+                        Color.Transparent,
+                    ),
+                ),
+            ),
     )
 }
 

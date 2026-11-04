@@ -11,6 +11,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vocalarm.app.VocalarmApp
+import com.vocalarm.app.alarm.AlarmService
 import com.vocalarm.app.ui.theme.Palettes
 import com.vocalarm.app.ui.theme.VocalarmTheme
 
@@ -35,6 +36,11 @@ class AlarmRingActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        AlarmService.screenShown(this)
     }
 
     @Suppress("DEPRECATION")

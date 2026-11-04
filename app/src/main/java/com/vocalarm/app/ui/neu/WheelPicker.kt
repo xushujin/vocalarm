@@ -22,6 +22,13 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.vocalarm.app.ui.theme.TimeDisplayStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -62,8 +69,27 @@ fun WheelPicker(
             }
     }
 
+    val shape = RoundedCornerShape(16.dp)
     Box(
-        modifier = modifier.height(itemHeight * visibleCount),
+        modifier = modifier
+            .height(itemHeight * visibleCount)
+            .drawWithContent {
+                drawContent()
+                val fade = 30.dp.toPx()
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(palette.surface, palette.surface.copy(alpha = 0f)),
+                    ),
+                    size = Size(size.width, fade),
+                )
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(palette.surface.copy(alpha = 0f), palette.surface),
+                    ),
+                    topLeft = Offset(0f, size.height - fade),
+                    size = Size(size.width, fade),
+                )
+            },
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -72,12 +98,13 @@ fun WheelPicker(
                 .height(itemHeight)
                 .neuSurface(
                     palette = palette,
-                    fill = palette.background,
-                    radius = 14.dp,
+                    fill = palette.accentTint.copy(alpha = 0.62f),
+                    radius = 16.dp,
                     tone = NeuTone.Inset,
-                    depth = 3.dp,
-                    blur = 10.dp,
-                ),
+                    depth = 2.dp,
+                    blur = 12.dp,
+                )
+                .border(1.dp, palette.accent.copy(alpha = 0.26f), shape),
         )
         LazyColumn(
             state = state,
@@ -100,9 +127,10 @@ fun WheelPicker(
                 ) {
                     Text(
                         text = label,
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                            fontSize = if (selected) 26.sp else 22.sp,
+                        style = TimeDisplayStyle.copy(
+                            fontSize = if (selected) 30.sp else 24.sp,
+                            lineHeight = if (selected) 34.sp else 28.sp,
+                            fontWeight = if (selected) FontWeight.Medium else FontWeight.Light,
                         ),
                         color = color,
                     )
@@ -136,9 +164,9 @@ fun TimeWheel(
         )
         Text(
             text = ":",
-            style = MaterialTheme.typography.displayMedium,
-            color = palette.muted,
-            modifier = Modifier.padding(horizontal = 2.dp),
+            style = TimeDisplayStyle.copy(fontSize = 38.sp, lineHeight = 42.sp),
+            color = palette.textSecondary,
+            modifier = Modifier.padding(horizontal = 4.dp),
         )
         WheelPicker(
             items = minutes,

@@ -1,6 +1,8 @@
 package com.vocalarm.app.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,16 +15,22 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -33,19 +41,21 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.vocalarm.app.R
 import com.vocalarm.app.domain.Alarm
-import com.vocalarm.app.domain.LoopMode
 import com.vocalarm.app.domain.Remaining
 import com.vocalarm.app.domain.RepeatKind
 import com.vocalarm.app.domain.RepeatPlan
-import com.vocalarm.app.domain.VoicePreset
 import com.vocalarm.app.ui.neu.NeuButton
 import com.vocalarm.app.ui.neu.NeuCard
-import com.vocalarm.app.ui.neu.NeuTone
+import com.vocalarm.app.ui.neu.NeuIconTile
 import com.vocalarm.app.ui.neu.VIcon
 import com.vocalarm.app.ui.neu.VIconImage
+import com.vocalarm.app.ui.theme.EyebrowStyle
 import com.vocalarm.app.ui.theme.LocalPalette
+import com.vocalarm.app.ui.theme.TimeDisplayStyle
 import java.time.DayOfWeek
 import java.util.Locale
+import kotlin.math.cos
+import kotlin.math.sin
 
 @Composable
 fun AlarmTimeText(alarm: Alarm, modifier: Modifier = Modifier, fontSize: TextUnit = 42.sp) {
@@ -53,10 +63,7 @@ fun AlarmTimeText(alarm: Alarm, modifier: Modifier = Modifier, fontSize: TextUni
     Text(
         text = alarm.timeText,
         modifier = modifier,
-        style = MaterialTheme.typography.displayLarge.copy(
-            fontSize = fontSize,
-            lineHeight = fontSize * 1.08f,
-        ),
+        style = TimeDisplayStyle.copy(fontSize = fontSize, lineHeight = fontSize * 1.08f),
         color = if (alarm.enabled) palette.textPrimary else palette.muted,
     )
 }
@@ -104,6 +111,13 @@ fun remainingText(triggerAt: Long?, now: Long): String? {
 }
 
 @Composable
+fun loopModeText(mode: com.vocalarm.app.domain.LoopMode, count: Int): String = when (mode) {
+    com.vocalarm.app.domain.LoopMode.Once -> stringResource(R.string.editor_loop_once)
+    com.vocalarm.app.domain.LoopMode.Times -> stringResource(R.string.editor_loop_times, count)
+    com.vocalarm.app.domain.LoopMode.Continuous -> stringResource(R.string.editor_loop_continuous)
+}
+
+@Composable
 fun contentSummary(alarm: Alarm): String {
     val parts = buildList {
         if (alarm.hasRecording) add(stringResource(R.string.home_content_recording))
@@ -120,6 +134,132 @@ fun formatDuration(millis: Long): String {
 fun formatRate(rate: Float): String = String.format(Locale.ROOT, "%.1f", rate)
 
 @Composable
+fun Eyebrow(text: String, modifier: Modifier = Modifier, color: Color = LocalPalette.current.muted) {
+    Text(
+        text = text,
+        modifier = modifier,
+        style = EyebrowStyle,
+        color = color,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+fun StatusPill(
+    icon: VIcon,
+    text: String,
+    modifier: Modifier = Modifier,
+    tint: Color = LocalPalette.current.accent,
+) {
+    val palette = LocalPalette.current
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(palette.accentTint)
+            .border(1.dp, tint.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        VIconImage(icon = icon, tint = tint, modifier = Modifier.size(13.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = tint,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+fun MetaItem(icon: VIcon, text: String, modifier: Modifier = Modifier) {
+    val palette = LocalPalette.current
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        VIconImage(icon = icon, tint = palette.muted, modifier = Modifier.size(13.dp))
+        Spacer(Modifier.width(5.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = palette.textSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** The in-app version of the launcher mark: a soft dial with V-shaped hands. */
+@Composable
+fun VocalarmMark(modifier: Modifier = Modifier, size: Dp = 88.dp) {
+    val palette = LocalPalette.current
+    Canvas(modifier.size(size)) {
+        val radius = this.size.minDimension / 2f
+        val center = Offset(this.size.width / 2f, this.size.height / 2f)
+        drawCircle(
+            color = palette.accent.copy(alpha = 0.10f),
+            radius = radius * 1.06f,
+            center = center,
+        )
+        drawCircle(
+            color = palette.darkShadow.copy(alpha = 0.18f),
+            radius = radius * 0.96f,
+            center = center + Offset(0f, radius * 0.07f),
+        )
+        drawCircle(
+            brush = Brush.linearGradient(
+                colors = listOf(palette.accent, palette.accentDeep),
+                start = center - Offset(radius, radius),
+                end = center + Offset(radius, radius),
+            ),
+            radius = radius * 0.94f,
+            center = center,
+        )
+        drawCircle(
+            color = Color.White.copy(alpha = 0.34f),
+            radius = radius * 0.86f,
+            center = center,
+            style = Stroke(width = radius * 0.014f),
+        )
+        for (index in 0 until 12) {
+            val angle = Math.toRadians((index * 30 - 90).toDouble())
+            val inner = radius * (if (index % 3 == 0) 0.76f else 0.80f)
+            val outer = radius * 0.86f
+            drawLine(
+                color = Color.White.copy(alpha = if (index % 3 == 0) 0.55f else 0.30f),
+                start = center + Offset((inner * cos(angle)).toFloat(), (inner * sin(angle)).toFloat()),
+                end = center + Offset((outer * cos(angle)).toFloat(), (outer * sin(angle)).toFloat()),
+                strokeWidth = radius * (if (index % 3 == 0) 0.024f else 0.014f),
+                cap = StrokeCap.Round,
+            )
+        }
+        val hourAngle = Math.toRadians(-120.0)
+        val minuteAngle = Math.toRadians(-30.0)
+        drawLine(
+            color = Color.White.copy(alpha = 0.96f),
+            start = center,
+            end = center + Offset(
+                (radius * 0.50f * cos(hourAngle)).toFloat(),
+                (radius * 0.50f * sin(hourAngle)).toFloat(),
+            ),
+            strokeWidth = radius * 0.070f,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = Color.White.copy(alpha = 0.96f),
+            start = center,
+            end = center + Offset(
+                (radius * 0.64f * cos(minuteAngle)).toFloat(),
+                (radius * 0.64f * sin(minuteAngle)).toFloat(),
+            ),
+            strokeWidth = radius * 0.058f,
+            cap = StrokeCap.Round,
+        )
+        drawCircle(color = Color.White, radius = radius * 0.072f, center = center)
+        drawCircle(color = palette.accentDeep, radius = radius * 0.028f, center = center)
+    }
+}
+
+@Composable
 fun NeuProgressBar(
     progress: Float,
     modifier: Modifier = Modifier,
@@ -132,13 +272,17 @@ fun NeuProgressBar(
         val filled = size.width * progress.coerceIn(0f, 1f)
         if (filled > 0f) {
             drawRoundRect(
-                color = palette.accent,
+                brush = Brush.horizontalGradient(
+                    colors = listOf(palette.accent, palette.accentDeep),
+                    startX = 0f,
+                    endX = filled.coerceAtLeast(1f),
+                ),
                 size = Size(filled, size.height),
                 cornerRadius = radius,
             )
         }
         drawRect(
-            color = palette.darkShadow.copy(alpha = palette.darkShadowAlpha * 0.18f),
+            color = palette.darkShadow.copy(alpha = palette.darkShadowAlpha * 0.15f),
             topLeft = Offset.Zero,
             size = Size(size.width, size.height / 2f),
         )
@@ -163,8 +307,8 @@ fun NeuDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 32.dp),
-            radius = 28.dp,
-            depth = 10.dp,
+            radius = 30.dp,
+            depth = 12.dp,
             contentPadding = PaddingValues(24.dp),
         ) {
             Column {
@@ -179,7 +323,7 @@ fun NeuDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = palette.textSecondary,
                 )
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(24.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -213,31 +357,28 @@ fun NeuBanner(
     val palette = LocalPalette.current
     NeuCard(
         modifier = modifier.fillMaxWidth(),
-        radius = 20.dp,
+        radius = 22.dp,
         depth = 4.dp,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            VIconImage(
-                icon = VIcon.Bell,
-                tint = palette.accent,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(Modifier.width(10.dp))
+            NeuIconTile(icon = VIcon.Bell, size = 34.dp)
+            Spacer(Modifier.width(12.dp))
             Text(
                 text = text,
                 modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = palette.textSecondary,
             )
             Spacer(Modifier.width(8.dp))
             Text(
                 text = actionText,
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelMedium,
                 color = palette.accent,
                 modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
                     .clickable(onClick = onAction)
-                    .padding(start = 8.dp, top = 4.dp, bottom = 4.dp),
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
             )
         }
     }
@@ -254,40 +395,36 @@ fun NeuTabBar(
     NeuCard(
         modifier = modifier,
         radius = 32.dp,
-        depth = 8.dp,
-        contentPadding = PaddingValues(8.dp),
+        depth = 10.dp,
+        contentPadding = PaddingValues(7.dp),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             tabs.forEach { tab ->
                 val active = tab == selected
-                NeuCard(
-                    modifier = Modifier.weight(1f),
-                    radius = 24.dp,
-                    depth = if (active) 2.dp else 6.dp,
-                    tone = if (active) NeuTone.Inset else NeuTone.Raised,
-                    fill = if (active) palette.background else palette.background,
-                    contentPadding = PaddingValues(vertical = 10.dp),
-                    onClick = { onSelect(tab) },
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(25.dp))
+                        .background(if (active) palette.accentTint else Color.Transparent)
+                        .clickable(role = androidx.compose.ui.semantics.Role.Tab) { onSelect(tab) }
+                        .padding(vertical = 9.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        VIconImage(
-                            icon = tab.icon,
-                            tint = if (active) palette.accent else palette.muted,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(tab.labelRes),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (active) palette.accent else palette.muted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
+                    VIconImage(
+                        icon = tab.icon,
+                        tint = if (active) palette.accent else palette.muted,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(tab.labelRes),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                        ),
+                        color = if (active) palette.accent else palette.muted,
+                        maxLines = 1,
+                        textAlign = TextAlign.Center,
+                    )
                 }
             }
         }
@@ -301,24 +438,6 @@ enum class Tab(val labelRes: Int, val icon: VIcon) {
 }
 
 @Composable
-fun SectionCardTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelMedium,
-        color = LocalPalette.current.muted,
-    )
-}
-
-@Composable
-fun SoftColorSwatch(color: Color, modifier: Modifier = Modifier) {
-    Box(modifier.size(14.dp)) {
-        Canvas(Modifier.fillMaxWidth().height(14.dp)) {
-            drawCircle(color = color)
-        }
-    }
-}
-
-@Composable
 fun TabBarSpacer(modifier: Modifier = Modifier) {
-    Spacer(modifier.height(124.dp))
+    Spacer(modifier.height(24.dp))
 }
