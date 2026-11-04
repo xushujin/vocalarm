@@ -89,6 +89,14 @@ jobs:
           "$BUILD_TOOLS/apksigner" verify --print-certs \
             "vocalarm-${{ steps.version.outputs.name }}.apk"
 
+      - name: Upload R8 mapping
+        uses: actions/upload-artifact@v4
+        with:
+          name: mapping-${{ steps.version.outputs.name }}
+          path: app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:

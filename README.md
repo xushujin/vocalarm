@@ -150,7 +150,8 @@ git push origin v1.0.0
 3. 用 Secrets 中的 keystore 构建 `assembleRelease`，并自动注入 `github.repository_owner` / `github.event.repository.name`；
 4. 产物重命名为 `vocalarm-<version>.apk`（应用内更新按此名称找资产）；
 5. `apksigner verify` 校验签名；
-6. 创建 Release 并上传 APK。
+6. 上传 `mapping-<version>` 构建产物（用于还原 R8 崩溃堆栈）；
+7. 创建 Release 并上传 APK。
 
 ### 5.2 仓库需要配置的 Actions 参数（照此填写）
 
@@ -263,6 +264,8 @@ base64 -w0 vocalarm-release.jks
 | Debug 编译 | `./gradlew clean assembleDebug` | **成功，0 编译警告**（Kotlin `allWarningsAsErrors = true`） |
 | 单元测试 | `./gradlew cleanTest test` | **59 个测试，0 失败** |
 | Lint | `./gradlew lintRelease` | **0 error，1 warning**（仅提示 Gradle 9.8.2 可升级；`mipmap-anydpi-v26` 的目录提示已按 `app/lint.xml` 说明性豁免） |
+| R8 体积 | `./gradlew assembleRelease` | 未混淆 8.28MB → R8 **1.30MB**（DEX 原始 22.0MB → 2.1MB） |
+| R8 运行时保留 | 解析 APK 的 DEX 与 ServiceLoader | Manifest 组件、`MainDispatcherFactory` / `AndroidDispatcherFactory` 均在；服务文件未被错误改写 |
 | Release 签名（本地通道） | `./gradlew assembleRelease` + `keystore.properties` | **成功**，`apksigner` 校验 V2 签名通过 |
 | Release 元数据 | `aapt2 dump badging` | `versionName=1.2.3`、`versionCode=10203`、包名 `com.vocalarm.app` |
 | 清单结构 | `aapt2 dump xmltree` | 两个 Activity、两个前台服务、三个 Receiver、FileProvider 均按预期导出/类型 |
@@ -307,7 +310,7 @@ base64 -w0 vocalarm-release.jks
 - **更新源可达性**：应用内更新直接访问 `api.github.com` 与 Release 资产地址；所在网络无法访问 GitHub 时会显示网络错误。
 - **Gradle 9.8.1**：Lint 提示 9.8.2 可用；本机下载 9.8.2 分发包超时，为保证可复现构建固定 9.8.1。升级只需改 `gradle-wrapper.properties` 并提交。
 - **图标目录**：自适应图标必须放在 `mipmap-anydpi-v26`；尝试按 Lint 建议移到 `mipmap-anydpi` 会导致 AAPT2 找不到资源（已用 clean build 复现），因此在 `app/lint.xml` 中记录了豁免原因。
-- **不混淆**：release 未启用 R8（`isMinifyEnabled = false`），避免 TTS/MediaPlayer 反射与安装器相关的额外规则风险。
+- **R8 已启用**：release 开启 `isMinifyEnabled` 与 `isShrinkResources`，APK 约 1.3MB；CI 会保留 `mapping-<version>` artifact，崩溃堆栈可用其中的 `mapping.txt` 还原。
 
 ---
 
