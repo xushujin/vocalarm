@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!--
+      Adaptive icons need the v26 qualifier in this project: moving them to mipmap-anydpi makes
+      AAPT2 drop the files and the manifest link fails (verified with a clean build). The folder is
+      therefore intentional, not an obsolete SDK guard.
+    -->
+    <issue id="ObsoleteSdkInt">
+        <ignore path="src/main/res/mipmap-anydpi-v26" />
+    </issue>
+</lint>

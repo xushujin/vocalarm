@@ -1,0 +1,335 @@
+package com.vocalarm.app.alarm
+
+import android.app.Notification
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.graphics.drawable.Icon
+import android.os.Build
+import android.os.IBinder
+import android.os.PowerManager
+import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import androidx.core.content.ContextCompat
+import com.vocalarm.app.AppContainer
+import com.vocalarm.app.R
+import com.vocalarm.app.VocalarmApp
+import com.vocalarm.app.domain.Alarm
+import com.vocalarm.app.ui.ring.AlarmRingActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+
+/**
+ * Foreground service that owns a ringing session. It keeps the CPU awake, posts the full-screen
+ * alarm notification, plays the content, and tears everything down on dismiss or snooze.
+ */
+class AlarmService : Service() {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private lateinit var container: AppContainer
+    private var ringJob: Job? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var vibrator: Vibrator? = null
+    private var activeAlarm: Alarm? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        container = (application as VocalarmApp).container
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val action = intent?.action
+        when (action) {
+            ACTION_START -> {
+                startForegroundCompat(buildPreparingNotification())
+                val alarmId = intent.getStringExtra(EXTRA_ALARM_ID)
+                if (alarmId.isNullOrBlank()) {
+                    stopRinging()
+                } else {
+                    begin(alarmId, intent.getBooleanExtra(EXTRA_SNOOZE, false))
+                }
+            }
+
+            ACTION_STOP -> {
+                startForegroundCompat(buildPreparingNotification())
+                stopRinging()
+            }
+
+            ACTION_SNOOZE -> {
+                startForegroundCompat(buildPreparingNotification())
+                snooze(
+                    minutes = intent.getIntExtra(EXTRA_MINUTES, 5),
+                    requestedAlarmId = intent.getStringExtra(EXTRA_ALARM_ID),
+                )
+            }
+
+            else -> stopSelf()
+        }
+        return START_NOT_STICKY
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onDestroy() {
+        ringJob?.cancel()
+        container.playback.stop()
+        container.tts.stop()
+        container.ringing.stop()
+        releaseWakeLock()
+        vibrator?.cancel()
+        vibrator = null
+        scope.cancel()
+        super.onDestroy()
+    }
+
+    private fun begin(alarmId: String, isSnooze: Boolean) {
+        val alarm = container.alarmRepository.find(alarmId) ?: run {
+            stopRinging()
+            return
+        }
+        activeAlarm = alarm
+        container.ringing.start(alarm, isSnooze)
+
+        // Keep the series alive before audio starts: a crash during playback must not skip tomorrow.
+        if (!isSnooze) {
+            if (alarm.repeatDays.isEmpty()) {
+                container.alarmRepository.setEnabled(alarmId, false)
+            } else {
+                container.scheduler.schedule(alarm)
+            }
+        }
+
+        startForegroundCompat(buildAlarmNotification(alarm))
+        launchRingScreen(alarm)
+        acquireWakeLock()
+        ringJob = scope.launch { playUntilFinished(alarm) }
+    }
+
+    private suspend fun playUntilFinished(alarm: Alarm) {
+        val recording = container.recordings.fileFor(alarm.recordingFile)
+        val outcome = withTimeoutOrNull(MAX_RING_MS) {
+            runCatching {
+                container.playback.run(alarm, recording, SystemClock.elapsedRealtime())
+            }.getOrElse { error -> Result.failure(error) }
+        }
+        if (outcome == null) {
+            stopRinging()
+            return
+        }
+        if (outcome.isFailure) {
+            val message = getString(R.string.ring_audio_failed)
+            container.ringing.setMessage(message)
+            updateNotification(alarm, message)
+            startVibrationFallback()
+            delay(FAILED_RING_MS)
+        }
+        stopRinging()
+    }
+
+    private fun snooze(minutes: Int, requestedAlarmId: String? = null) {
+        val alarmId = requestedAlarmId?.takeIf { it.isNotBlank() }
+            ?: activeAlarm?.id
+            ?: container.ringing.current.value?.alarm?.id
+        if (alarmId.isNullOrBlank()) {
+            stopRinging()
+            return
+        }
+        container.scheduler.scheduleSnooze(alarmId, minutes)
+        postSnoozedNotification(minutes)
+        stopRinging()
+    }
+
+    private fun stopRinging() {
+        ringJob?.cancel()
+        ringJob = null
+        container.playback.stop()
+        container.tts.stop()
+        container.ringing.stop()
+        releaseWakeLock()
+        vibrator?.cancel()
+        vibrator = null
+        activeAlarm = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    private fun launchRingScreen(alarm: Alarm) {
+        val intent = AlarmRingActivity.createIntent(this, alarm.id).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
+        // On Android 10+ this can be blocked while in the background; the full-screen intent in the
+        // notification is the guaranteed path, this call only makes it instant when allowed.
+        runCatching { startActivity(intent) }
+    }
+
+    private fun acquireWakeLock() {
+        val powerManager = getSystemService(PowerManager::class.java) ?: return
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).apply {
+            setReferenceCounted(false)
+            acquire(MAX_RING_MS + 60_000L)
+        }
+    }
+
+    private fun releaseWakeLock() {
+        wakeLock?.let { lock -> if (lock.isHeld) runCatching { lock.release() } }
+        wakeLock = null
+    }
+
+    private fun startVibrationFallback() {
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            getSystemService(Vibrator::class.java)
+        } ?: return
+        this.vibrator = vibrator
+        val effect = VibrationEffect.createWaveform(longArrayOf(0, 700, 300, 700, 300, 1000), 0)
+        runCatching { vibrator.vibrate(effect) }
+    }
+
+    private fun updateNotification(alarm: Alarm, message: String) {
+        val manager = getSystemService(android.app.NotificationManager::class.java)
+        manager?.notify(NOTIFICATION_ID, buildAlarmNotification(alarm, message))
+    }
+
+    private fun postSnoozedNotification(minutes: Int) {
+        val notification = Notification.Builder(this, NotificationChannels.ALARM_STATUS)
+            .setSmallIcon(R.drawable.ic_stat_alarm)
+            .setContentTitle(getString(R.string.notification_snoozed_title))
+            .setContentText(getString(R.string.notification_snoozed_text, minutes))
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .build()
+        getSystemService(android.app.NotificationManager::class.java)
+            ?.notify(SNOOZE_NOTIFICATION_ID, notification)
+    }
+
+    private fun buildPreparingNotification(): Notification =
+        Notification.Builder(this, NotificationChannels.ALARM)
+            .setSmallIcon(R.drawable.ic_stat_alarm)
+            .setContentTitle(getString(R.string.notification_preparing))
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build()
+
+    private fun buildAlarmNotification(alarm: Alarm, message: String? = null): Notification {
+        val fullScreen = PendingIntent.getActivity(
+            this,
+            REQUEST_RING_SCREEN,
+            AlarmRingActivity.createIntent(this, alarm.id),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val stopIntent = PendingIntent.getService(
+            this,
+            REQUEST_STOP,
+            Intent(this, AlarmService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val actionIcon = Icon.createWithResource(this, R.drawable.ic_stat_alarm)
+        val title = alarm.label.ifBlank { getString(R.string.notification_alarm_title) }
+        val text = message ?: buildString {
+            append(getString(R.string.notification_alarm_text, alarm.timeText))
+            val parts = buildList {
+                if (alarm.hasRecording) add(getString(R.string.content_recording))
+                if (alarm.hasText) add(getString(R.string.content_speech))
+            }
+            if (parts.isNotEmpty()) {
+                append(" · ")
+                append(parts.joinToString(getString(R.string.content_separator)))
+            }
+        }
+        val builder = Notification.Builder(this, NotificationChannels.ALARM)
+            .setSmallIcon(R.drawable.ic_stat_alarm)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setCategory(Notification.CATEGORY_ALARM)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .setShowWhen(false)
+            .setFullScreenIntent(fullScreen, true)
+            .setContentIntent(fullScreen)
+            .addAction(Notification.Action.Builder(actionIcon, getString(R.string.action_stop), stopIntent).build())
+        alarm.snoozeMinutes.forEachIndexed { index, minutes ->
+            val snoozeIntent = PendingIntent.getService(
+                this,
+                REQUEST_SNOOZE_BASE + index,
+                Intent(this, AlarmService::class.java)
+                    .setAction(ACTION_SNOOZE)
+                    .putExtra(EXTRA_MINUTES, minutes),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            builder.addAction(
+                Notification.Action.Builder(
+                    actionIcon,
+                    getString(R.string.action_snooze, minutes),
+                    snoozeIntent,
+                ).build(),
+            )
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+        }
+        return builder.build()
+    }
+
+    private fun startForegroundCompat(notification: Notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+    }
+
+    companion object {
+        const val ACTION_START = "com.vocalarm.app.action.START_RINGING"
+        const val ACTION_STOP = "com.vocalarm.app.action.STOP_RINGING"
+        const val ACTION_SNOOZE = "com.vocalarm.app.action.SNOOZE_RINGING"
+        const val EXTRA_ALARM_ID = "extra_alarm_id"
+        const val EXTRA_SNOOZE = "extra_snooze"
+        const val EXTRA_MINUTES = "extra_minutes"
+
+        private const val NOTIFICATION_ID = 1001
+        private const val SNOOZE_NOTIFICATION_ID = 1002
+        private const val REQUEST_RING_SCREEN = 11
+        private const val REQUEST_STOP = 12
+        private const val REQUEST_SNOOZE_BASE = 20
+        private const val WAKE_LOCK_TAG = "Vocalarm:Ringing"
+        private const val MAX_RING_MS = 30 * 60 * 1000L
+        private const val FAILED_RING_MS = 60 * 1000L
+
+        fun start(context: Context, alarmId: String, snooze: Boolean) {
+            val intent = Intent(context, AlarmService::class.java)
+                .setAction(ACTION_START)
+                .putExtra(EXTRA_ALARM_ID, alarmId)
+                .putExtra(EXTRA_SNOOZE, snooze)
+            ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun stop(context: Context) {
+            val intent = Intent(context, AlarmService::class.java).setAction(ACTION_STOP)
+            ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun snooze(context: Context, minutes: Int, alarmId: String) {
+            val intent = Intent(context, AlarmService::class.java)
+                .setAction(ACTION_SNOOZE)
+                .putExtra(EXTRA_MINUTES, minutes)
+                .putExtra(EXTRA_ALARM_ID, alarmId)
+            ContextCompat.startForegroundService(context, intent)
+        }
+    }
+}

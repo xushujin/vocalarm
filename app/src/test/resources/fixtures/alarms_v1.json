@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "alarms": [
+    {
+      "id": "legacy-weekday",
+      "hour": 6,
+      "minute": 45,
+      "enabled": true,
+      "repeatDays": [1, 2, 3, 4, 5],
+      "recording": "a1b2c3d4-1111-2222-3333-444455556666.m4a"
+    },
+    {
+      "id": "legacy-off",
+      "hour": 22,
+      "minute": 5,
+      "enabled": false,
+      "repeatDays": [],
+      "recording": null
+    }
+  ]
+}

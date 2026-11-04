@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 2,
+  "alarms": [
+    {
+      "id": "v2-weekend-voice",
+      "hour": 8,
+      "minute": 0,
+      "enabled": true,
+      "repeatDays": [6, 7],
+      "recording": null,
+      "text": "早上好，今天记得带伞。",
+      "voiceName": "zh-cn-x-ccc-local",
+      "speechRate": 1.2
+    }
+  ]
+}
