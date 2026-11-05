@@ -1,6 +1,7 @@
 package com.vocalarm.app.ui.screens
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -102,6 +103,7 @@ fun AlarmListScreen(
 
     var notificationsEnabled by rememberSaveable { mutableStateOf(true) }
     var exactAlarmsEnabled by rememberSaveable { mutableStateOf(true) }
+    var fullScreenAllowed by rememberSaveable { mutableStateOf(true) }
     var requestedNotifications by rememberSaveable { mutableStateOf(false) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -114,6 +116,7 @@ fun AlarmListScreen(
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         notificationsEnabled = NotificationChannels.areNotificationsEnabled(context)
         exactAlarmsEnabled = container.scheduler.canScheduleExact()
+        fullScreenAllowed = NotificationChannels.canUseFullScreenIntent(context)
         val permissionGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
@@ -156,6 +159,15 @@ fun AlarmListScreen(
                                     context.startActivity(NotificationChannels.notificationSettingsAction(context))
                                 }
                             },
+                        )
+                    }
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && !fullScreenAllowed) {
+                    item {
+                        NeuBanner(
+                            text = stringResource(R.string.home_full_screen_off),
+                            actionText = stringResource(R.string.home_open_settings),
+                            onAction = { openFullScreenIntentSettings(context) },
                         )
                     }
                 }
@@ -235,6 +247,17 @@ fun AlarmListScreen(
                 accent = true,
             )
         }
+    }
+}
+
+/** Sends the user to the system page where full-screen intents are granted; falls back to the
+ *  notification settings page on builds or ROMs that do not expose it. */
+private fun openFullScreenIntentSettings(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+    runCatching {
+        context.startActivity(NotificationChannels.fullScreenIntentSettingsAction(context))
+    }.recoverCatching {
+        context.startActivity(NotificationChannels.notificationSettingsAction(context))
     }
 }
 

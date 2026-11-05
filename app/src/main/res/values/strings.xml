@@ -61,6 +61,7 @@
     <string name="home_delete_title">删除这个闹钟？</string>
     <string name="home_delete_body">删除后无法恢复，配套的录音文件也会被清理。</string>
     <string name="home_notifications_off">通知已关闭，锁屏时可能看不到响铃界面</string>
+    <string name="home_full_screen_off">全屏提醒未开启，到点只弹通知、不会亮屏整屏响铃</string>
     <string name="home_exact_alarm_off">精确闹钟权限未授予，触发可能延迟</string>
     <string name="home_open_settings">去设置</string>
 
@@ -166,6 +167,7 @@
     <string name="about_section_permissions">权限说明</string>
     <string name="perm_mic">麦克风 · 录制闹钟铃声</string>
     <string name="perm_notifications">通知 · 响铃与下载进度提醒</string>
+    <string name="perm_full_screen">全屏通知 · 锁屏时整屏显示响铃界面</string>
     <string name="perm_exact_alarm">精确闹钟 · 按时触发</string>
     <string name="perm_foreground">前台服务 · 锁屏与后台响铃、下载</string>
     <string name="perm_boot">开机自启 · 重启后恢复闹钟</string>

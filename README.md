@@ -27,7 +27,7 @@
 | 11 | 自定义音量 + 渐强 | `domain/LoopPolicy.kt#FadeGain`、`AudioPlayer`、`AlarmService` | MediaPlayer 实时增益；TTS 通过音量参数，是否生效取决于引擎 |
 | 12 | 闹钟增删改启停 | `data/AlarmRepository.kt`、`ui/screens/AlarmListScreen.kt` | 列表开关、编辑页删除 |
 | 13 | 先录音再文字语音 | `alarm/AlarmPlaybackEngine.kt` | 每轮顺序：录音 → 语音；两者可只配其一 |
-| 14 | 锁屏 / 后台正常触发 | `alarm/AlarmScheduler.kt`、`AlarmService.kt`、`AlarmReceiver.kt`、`BootReceiver.kt` | `setAlarmClock` + 前台服务 + 全屏通知 + 唤醒锁 + 开机恢复 |
+| 14 | 锁屏 / 后台正常触发 | `alarm/AlarmScheduler.kt`、`AlarmService.kt`、`AlarmReceiver.kt`、`BootReceiver.kt` | `setAlarmClock` + 前台服务 + 全屏通知 + 主动点亮屏幕 + CPU/屏幕唤醒锁 + 开机恢复 |
 | 15 | 本地存储、无需账号 | `data/JsonStore.kt`、`AlarmRepository.kt`、`SettingsRepository.kt`、`RecordingStore.kt` | 原子写 JSON + 本地 m4a；无网络账号 |
 
 界面：全部组件自绘（双阴影拟态、自绘图标、滚轮、开关、滑杆、输入框），只有 Compose 官方 `foundation` / `material3` 的文本与主题骨架，没有第三方 UI 库或 DI 框架。应用图标与页内标识共用「柔光表盘 + V 形指针」语言，自适应图标、单色图标与 Android 12 启动屏保持一致。
@@ -244,14 +244,16 @@ base64 -w0 vocalarm-release.jks
 | `SCHEDULE_EXACT_ALARM`（≤32）/ `USE_EXACT_ALARM` | 精确触发闹钟 |
 | `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | 锁屏/后台响铃 |
 | `FOREGROUND_SERVICE_DATA_SYNC` | 后台下载更新 |
-| `USE_FULL_SCREEN_INTENT` | 锁屏全屏响铃 |
-| `WAKE_LOCK` | 响铃期间保持 CPU |
+| `USE_FULL_SCREEN_INTENT` | 锁屏全屏响铃。Android 14+ 属于「特殊应用权限 → 全屏通知」，被系统或厂商关闭时系统会把闹钟降级成通知横幅，首页会给出提示并可直接跳到该设置页 |
+| `WAKE_LOCK` | 响铃期间保持 CPU，并点亮/保持屏幕 |
 | `RECEIVE_BOOT_COMPLETED` | 重启、改时间、改时区后恢复闹钟 |
 | `VIBRATE` | 音频失败时的震动兜底 |
 | `INTERNET` / `ACCESS_NETWORK_STATE` | 检查与下载更新 |
 | `REQUEST_INSTALL_PACKAGES` | 应用内更新安装 |
 
 关于页逐条列出了这些权限及用途。
+
+`USE_FULL_SCREEN_INTENT` 在 Android 14（API 34）及以上是一个可被用户关闭的特殊权限：关闭后 `setFullScreenIntent` 不会启动响铃页，只留下一条横幅。应用启动/回到前台时用 `NotificationManager.canUseFullScreenIntent()` 读取真实状态，未开启时在首页顶部显示「全屏提醒未开启」提示条，点击跳转 `ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT`。
 
 ---
 
@@ -270,6 +272,9 @@ base64 -w0 vocalarm-release.jks
 | Release 元数据 | `aapt2 dump badging` | `versionName=1.2.3`、`versionCode=10203`、包名 `com.vocalarm.app` |
 | 清单结构 | `aapt2 dump xmltree` | 两个 Activity、两个前台服务、三个 Receiver、FileProvider 均按预期导出/类型 |
 | JSON 解析 | 真实 fixture 文件 + `AlarmJsonCodecTest` / `SettingsJsonCodecTest` | v1/v2 迁移、往返、损坏条目、版本过新全部通过 |
+| 全屏响铃（模拟器） | API 36 pixel_6 AVD，写入闹钟后熄屏等待触发 | **通过**：`PowerManagerService` 记录 `Waking up from Asleep … details=Vocalarm:RingScreen`，屏幕点亮，`AlarmRingActivity` 全屏置顶并 occlude 锁屏（`mKeyguardOccluded=true`） |
+| 全屏通知权限被关闭（模拟器） | `cmd appops set … USE_FULL_SCREEN_INTENT deny` | **通过**：首页出现「全屏提醒未开启」提示条；响铃时屏幕仍被点亮，但系统只显示横幅。权限恢复后提示条消失 |
+| 亮屏解锁时触发（模拟器） | 屏幕点亮并停留在桌面 | **符合系统设计**：不接管屏幕，显示带「停止 / 稍后 5 分钟 / 稍后 10 分钟」的横幅；点按可进入响铃页 |
 
 单测覆盖的核心逻辑：
 
@@ -283,14 +288,14 @@ base64 -w0 vocalarm-release.jks
 
 ### 明确未验证的部分
 
-本机**没有 Android 模拟器或真机**（`adb devices` 为空，未安装 emulator），因此以下只能在设备上确认，代码已完成但没有运行证据：
+本机没有 Android 真机，以下项目只有模拟器（API 36 google_apis、swiftshader）证据或完全没有运行证据：
 
-- 录音、试听、暂停续播的实际音频链路；
-- 系统 TTS 是否安装、中文音色列表与「男声/女声」映射的实际结果；
-- `AlarmManager.setAlarmClock` 在锁屏/Doze 下的实际触发、全屏通知与响铃界面；
+- 录音、试听、暂停续播的实际音频链路（模拟器无麦克风输入）；
+- 系统 TTS 是否安装、中文音色列表与「男声/女声」映射的实际结果（本次测试的模拟器没有 TTS 引擎，响铃直接走了「音频失败 + 震动」兜底，顺带验证了该兜底路径）；
+- 厂商 ROM（MIUI / HyperOS、EMUI、ColorOS）对全屏 Intent、后台弹出、锁屏显示的额外拦截；
 - 开机恢复、改时区恢复；
 - 应用内更新的真实下载、进度通知与 PackageInstaller 安装；
-- 拟态视觉、滚动、主题切换的实际渲染效果。
+- 拟态视觉、滚动、主题切换在真机上的实际渲染效果。
 
 此外：
 
@@ -301,6 +306,9 @@ base64 -w0 vocalarm-release.jks
 
 ## 10. 已知限制与设计取舍
 
+- **屏幕亮着时的全屏**：Android 10 起禁止后台启动 Activity，全屏闹钟只能由「全屏 Intent」拉起；而系统只在屏幕熄灭或锁屏时展开全屏 Intent，屏幕亮着且已解锁时按设计只显示带操作按钮的横幅。系统自带时钟是特权应用，第三方应用无法完全复刻这一行为。Vocalarm 的处理：息屏/锁屏时点亮屏幕并全屏响铃；正在使用手机时给出带「停止 / 稍后 5 分钟 / 稍后 10 分钟」的横幅，点按即可进入响铃页，声音与震动不依赖屏幕是否点亮。
+- **全屏通知权限**：Android 14+ 的「全屏通知」默认只授予通话与闹钟类应用，部分厂商 ROM 对侧载应用默认关闭。关闭后系统会静默降级成横幅；首页顶部会显示提示条，点击可直达该设置页。
+- **厂商 ROM 的额外开关**：小米 / 红米需要在「应用设置 → 权限管理」中允许「后台弹出界面」与「锁屏显示」；华为 / 荣耀需要在「应用启动管理」中允许自启动与后台活动。这些开关没有公开 API，应用无法自行检测或跳转。
 - **TTS 音色依赖设备**：系统语音引擎不同，可用音色差异很大。预设按名称/特性推断，找不到时用默认音色并在编辑页提示；「更多音色」列出引擎真实返回的列表。
 - **TTS 音量/渐强**：通过 `Bundle("volume")` 传入，部分引擎会忽略；录音播放的渐强由 MediaPlayer 保证。
 - **系统闹铃音量**：应用只设置自身播放音量，不修改系统音量；如果系统闹铃声道被静音，仍然不会出声。

@@ -39,6 +39,7 @@ class AlarmService : Service() {
     private lateinit var container: AppContainer
     private var ringJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var screenWakeLock: PowerManager.WakeLock? = null
     private var vibrator: Vibrator? = null
     private var activeAlarm: Alarm? = null
     private var fullScreenVisible = false
@@ -80,6 +81,8 @@ class AlarmService : Service() {
                     stopSelf()
                 } else {
                     cancelFullScreenNotification()
+                    // The ringing activity keeps the display on by itself from now on.
+                    releaseScreenWakeLock()
                 }
             }
 
@@ -109,6 +112,10 @@ class AlarmService : Service() {
         }
         activeAlarm = alarm
         container.ringing.start(alarm, isSnooze)
+
+        // Light the display before anything else: a locked or sleeping phone must look like an
+        // alarm clock the moment the sound starts, even on ROMs that refuse the full-screen intent.
+        wakeScreen()
 
         // Keep the series alive before audio starts: a crash during playback must not skip tomorrow.
         if (!isSnooze) {
@@ -195,6 +202,32 @@ class AlarmService : Service() {
     private fun releaseWakeLock() {
         wakeLock?.let { lock -> if (lock.isHeld) runCatching { lock.release() } }
         wakeLock = null
+        releaseScreenWakeLock()
+    }
+
+    /**
+     * Turns the display on and holds it lit until the ringing screen takes over. Android only
+     * launches full-screen intents while the screen is off or the keyguard is showing, so a lit
+     * screen is also what makes the notification banner readable when the device is in use.
+     */
+    @Suppress("DEPRECATION")
+    private fun wakeScreen() {
+        if (screenWakeLock != null) return
+        val powerManager = getSystemService(PowerManager::class.java) ?: return
+        runCatching {
+            screenWakeLock = powerManager.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                SCREEN_WAKE_LOCK_TAG,
+            ).apply {
+                setReferenceCounted(false)
+                acquire(SCREEN_WAKE_LOCK_TIMEOUT_MS)
+            }
+        }
+    }
+
+    private fun releaseScreenWakeLock() {
+        screenWakeLock?.let { lock -> if (lock.isHeld) runCatching { lock.release() } }
+        screenWakeLock = null
     }
 
     private fun startVibrationFallback() {
@@ -365,6 +398,8 @@ class AlarmService : Service() {
         private const val REQUEST_STOP = 12
         private const val REQUEST_SNOOZE_BASE = 20
         private const val WAKE_LOCK_TAG = "Vocalarm:Ringing"
+        private const val SCREEN_WAKE_LOCK_TAG = "Vocalarm:RingScreen"
+        private const val SCREEN_WAKE_LOCK_TIMEOUT_MS = 5 * 60 * 1000L
         private const val MAX_RING_MS = 30 * 60 * 1000L
         private const val FAILED_RING_MS = 60 * 1000L
 

@@ -3,7 +3,11 @@ package com.vocalarm.app.alarm
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.provider.Settings
+import androidx.annotation.RequiresApi
+import androidx.core.net.toUri
 
 object NotificationChannels {
 
@@ -75,4 +79,23 @@ object NotificationChannels {
         android.content.Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
             .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    /**
+     * Starting with Android 14 the full-screen intent is a user-toggleable permission: when it is
+     * missing the system silently downgrades the alarm to a heads-up notification and the ringing
+     * screen never covers the keyguard. Older platforms always allow it.
+     */
+    fun canUseFullScreenIntent(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return true
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return true
+        return runCatching { manager.canUseFullScreenIntent() }.getOrDefault(true)
+    }
+
+    /** Opens the special app access page where full-screen intents are granted or revoked. */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    fun fullScreenIntentSettingsAction(context: Context): Intent =
+        Intent(
+            Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+            "package:${context.packageName}".toUri(),
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 }

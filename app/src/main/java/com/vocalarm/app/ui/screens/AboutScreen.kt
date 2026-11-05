@@ -244,6 +244,7 @@ private fun PermissionsCard() {
     val permissions = listOf(
         R.string.perm_mic,
         R.string.perm_notifications,
+        R.string.perm_full_screen,
         R.string.perm_exact_alarm,
         R.string.perm_foreground,
         R.string.perm_boot,
