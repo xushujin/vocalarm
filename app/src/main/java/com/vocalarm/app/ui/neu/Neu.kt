@@ -163,19 +163,21 @@ fun Modifier.neuSurface(
                     size = size,
                     cornerRadius = CornerRadius(corner),
                 )
-                // A hairline rim catches the light on the top edge and seats the card at the bottom.
+                // Light from above as a soft fill, never a stroke: a 1px rim reads as a stray
+                // hairline at the corners once the arc radius is small relative to the card.
                 drawRoundRect(
                     brush = Brush.verticalGradient(
-                        colors = listOf(
-                            light.copy(alpha = 0.40f),
-                            Color.Transparent,
-                            dark.copy(alpha = 0.10f),
+                        colorStops = arrayOf(
+                            0f to light.copy(alpha = 0.16f),
+                            0.35f to light.copy(alpha = 0.04f),
+                            0.55f to Color.Transparent,
                         ),
+                        startY = 0f,
+                        endY = size.height,
                     ),
-                    topLeft = Offset(0.75f, 0.75f),
-                    size = Size(size.width - 1.5f, size.height - 1.5f),
-                    cornerRadius = CornerRadius(corner - 0.75f),
-                    style = Stroke(width = 1.2f),
+                    topLeft = Offset.Zero,
+                    size = size,
+                    cornerRadius = CornerRadius(corner),
                 )
             }
 
@@ -271,7 +273,6 @@ fun NeuCard(
                 glowColor = glow,
             )
             .clip(shape)
-            .border(1.dp, palette.hairline.copy(alpha = 0.30f), shape)
             .then(clickable)
             .padding(contentPadding),
         content = content,
