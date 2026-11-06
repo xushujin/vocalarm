@@ -26,7 +26,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -73,7 +72,10 @@ fun AlarmRingScreen(container: AppContainer, onFinish: () -> Unit) {
             onFinish()
             return@LaunchedEffect
         }
-        snapshotFlow { container.ringing.current.value }.collect { current ->
+        // Collect the StateFlow itself. `snapshotFlow { flow.value }` never re-emits, because a
+        // StateFlow is not a Compose snapshot state, which left the screen stuck as a blank page
+        // after the alarm was dismissed from the notification.
+        container.ringing.current.collect { current ->
             if (current == null) onFinish()
         }
     }

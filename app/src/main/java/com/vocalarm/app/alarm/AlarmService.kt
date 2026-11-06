@@ -43,6 +43,7 @@ class AlarmService : Service() {
     private var vibrator: Vibrator? = null
     private var activeAlarm: Alarm? = null
     private var fullScreenVisible = false
+    private var ringScreenShown = false
 
     override fun onCreate() {
         super.onCreate()
@@ -53,11 +54,14 @@ class AlarmService : Service() {
         val action = intent?.action
         when (action) {
             ACTION_START -> {
-                startForegroundCompat(buildPreparingNotification())
                 val alarmId = intent.getStringExtra(EXTRA_ALARM_ID)
                 if (alarmId.isNullOrBlank()) {
+                    startForegroundCompat(buildPreparingNotification())
                     stopRinging()
                 } else {
+                    // Never post the "preparing" placeholder on this path: a second notification
+                    // right before the full-screen one lets the system mute the alarm as
+                    // "recently noisy" and drop the full-screen launch with it.
                     begin(alarmId, intent.getBooleanExtra(EXTRA_SNOOZE, false))
                 }
             }
@@ -80,6 +84,7 @@ class AlarmService : Service() {
                 if (alarm == null) {
                     stopSelf()
                 } else {
+                    ringScreenShown = true
                     cancelFullScreenNotification()
                     // The ringing activity keeps the display on by itself from now on.
                     releaseScreenWakeLock()
@@ -107,31 +112,61 @@ class AlarmService : Service() {
 
     private fun begin(alarmId: String, isSnooze: Boolean) {
         val alarm = container.alarmRepository.find(alarmId) ?: run {
+            // Started as a foreground service, so satisfy the notification requirement first.
+            startForegroundCompat(buildPreparingNotification())
             stopRinging()
             return
         }
         activeAlarm = alarm
+        ringScreenShown = false
         container.ringing.start(alarm, isSnooze)
-
-        // Light the display before anything else: a locked or sleeping phone must look like an
-        // alarm clock the moment the sound starts, even on ROMs that refuse the full-screen intent.
-        wakeScreen()
 
         // Keep the series alive before audio starts: a crash during playback must not skip tomorrow.
         if (!isSnooze) {
             if (alarm.repeatDays.isEmpty()) {
                 container.alarmRepository.setEnabled(alarmId, false)
+                // A cold start re-armed this alarm for tomorrow before the broadcast arrived, so a
+                // one-shot alarm has to be cancelled explicitly or it rings again the next day.
+                container.scheduler.cancel(alarmId)
             } else {
                 container.scheduler.schedule(alarm)
             }
         }
 
-        startForegroundCompat(buildOngoingNotification(alarm))
+        // Post the full-screen intent before touching the display. Android only expands one while
+        // the screen is off or the keyguard is up; lighting the screen first would make the system
+        // treat this as an in-use device and demote our own alarm to a heads-up banner.
         postFullScreenNotification(alarm)
+        if (!fullScreenIntentUsable()) {
+            // Notifications blocked or the full-screen permission revoked: the system will never
+            // expand the intent, so waking the display ourselves is the only thing left to do.
+            wakeScreen()
+        }
+        startForegroundCompat(buildOngoingNotification(alarm))
         launchRingScreen(alarm)
         acquireWakeLock()
         ringJob = scope.launch { playUntilFinished(alarm) }
+        watchRingScreenLaunch()
     }
+
+    /**
+     * Safety net for ROMs that drop the full-screen intent silently: when the ringing screen still
+     * has not reported itself after a short grace period and the display is dark, wake it so the
+     * user at least hears and sees the alarm.
+     */
+    private fun watchRingScreenLaunch() {
+        scope.launch {
+            delay(RING_SCREEN_GRACE_MS)
+            if (ringScreenShown) return@launch
+            val powerManager = getSystemService(PowerManager::class.java) ?: return@launch
+            if (!powerManager.isInteractive) wakeScreen()
+        }
+    }
+
+    /** Full-screen intents need both notifications and the Android 14+ special access grant. */
+    private fun fullScreenIntentUsable(): Boolean =
+        NotificationChannels.areNotificationsEnabled(this) &&
+            NotificationChannels.canUseFullScreenIntent(this)
 
     private suspend fun playUntilFinished(alarm: Alarm) {
         val recording = container.recordings.fileFor(alarm.recordingFile)
@@ -206,9 +241,9 @@ class AlarmService : Service() {
     }
 
     /**
-     * Turns the display on and holds it lit until the ringing screen takes over. Android only
-     * launches full-screen intents while the screen is off or the keyguard is showing, so a lit
-     * screen is also what makes the notification banner readable when the device is in use.
+     * Turns the display on and holds it lit. This is a fallback: it runs only when the system
+     * cannot or will not expand the full-screen intent, and it costs us the full-screen expansion
+     * for that session because a lit screen no longer counts as "in the user's pocket".
      */
     @Suppress("DEPRECATION")
     private fun wakeScreen() {
@@ -400,6 +435,7 @@ class AlarmService : Service() {
         private const val WAKE_LOCK_TAG = "Vocalarm:Ringing"
         private const val SCREEN_WAKE_LOCK_TAG = "Vocalarm:RingScreen"
         private const val SCREEN_WAKE_LOCK_TIMEOUT_MS = 5 * 60 * 1000L
+        private const val RING_SCREEN_GRACE_MS = 3_000L
         private const val MAX_RING_MS = 30 * 60 * 1000L
         private const val FAILED_RING_MS = 60 * 1000L
 
