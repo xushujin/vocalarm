@@ -185,6 +185,14 @@
     <string name="diag_battery_ok">不受限制</string>
     <string name="diag_battery_limited">受限，可能被清理</string>
     <string name="diag_battery_action">允许后台运行</string>
+    <string name="diag_guardian">后台守护</string>
+    <string name="diag_guardian_running">运行中</string>
+    <string name="diag_guardian_on">已开启</string>
+    <string name="diag_guardian_off">已关闭</string>
+    <string name="guardian_enable">开启后台守护</string>
+    <string name="guardian_disable">关闭后台守护</string>
+    <string name="guardian_title">闹钟守护中</string>
+    <string name="guardian_text">从最近任务划掉也会按时响铃</string>
     <string name="diag_test">10 秒后试响一次</string>
     <string name="diag_test_toast">10 秒后响铃，请立刻锁屏，观察是否亮屏并全屏响铃</string>
     <string name="diag_test_missing">先创建一个闹钟再测试</string>

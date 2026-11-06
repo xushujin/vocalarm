@@ -15,6 +15,7 @@ import org.json.JSONObject
 data class AppSettings(
     val paletteId: String = "mist",
     val lastUpdateCheckAt: Long = 0L,
+    val guardianEnabled: Boolean = true,
 )
 
 data class SettingsFile(
@@ -24,11 +25,12 @@ data class SettingsFile(
 
 object SettingsJsonCodec {
 
-    const val CURRENT_SCHEMA = 2
+    const val CURRENT_SCHEMA = 3
 
     private const val KEY_SCHEMA = "schemaVersion"
     private const val KEY_PALETTE = "paletteId"
     private const val KEY_LAST_CHECK = "lastUpdateCheckAt"
+    private const val KEY_GUARDIAN = "guardianEnabled"
 
     fun decode(raw: String): SettingsFile {
         val root = JSONObject(raw)
@@ -40,10 +42,17 @@ object SettingsJsonCodec {
             version = 2
             root.put(KEY_SCHEMA, version)
         }
+        if (version < 3) {
+            // v3 adds the background guardian; existing installs get it enabled by default.
+            if (!root.has(KEY_GUARDIAN)) root.put(KEY_GUARDIAN, true)
+            version = 3
+            root.put(KEY_SCHEMA, version)
+        }
         return SettingsFile(
             settings = AppSettings(
                 paletteId = root.optString(KEY_PALETTE, "mist").ifBlank { "mist" },
                 lastUpdateCheckAt = root.optLong(KEY_LAST_CHECK, 0L),
+                guardianEnabled = root.optBoolean(KEY_GUARDIAN, true),
             ),
             sourceSchema = source,
         )
@@ -53,6 +62,7 @@ object SettingsJsonCodec {
         put(KEY_SCHEMA, CURRENT_SCHEMA)
         put(KEY_PALETTE, settings.paletteId)
         put(KEY_LAST_CHECK, settings.lastUpdateCheckAt)
+        put(KEY_GUARDIAN, settings.guardianEnabled)
     }.toString(2)
 }
 
@@ -97,6 +107,12 @@ class SettingsRepository(
 
     fun markUpdateChecked(timestamp: Long) {
         _settings.update { it.copy(lastUpdateCheckAt = timestamp) }
+        persist()
+    }
+
+    fun setGuardianEnabled(enabled: Boolean) {
+        if (_settings.value.guardianEnabled == enabled) return
+        _settings.update { it.copy(guardianEnabled = enabled) }
         persist()
     }
 

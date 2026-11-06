@@ -27,7 +27,7 @@
 | 11 | 自定义音量 + 渐强 | `domain/LoopPolicy.kt#FadeGain`、`AudioPlayer`、`AlarmService` | MediaPlayer 实时增益；TTS 通过音量参数，是否生效取决于引擎 |
 | 12 | 闹钟增删改启停 | `data/AlarmRepository.kt`、`ui/screens/AlarmListScreen.kt` | 列表开关、编辑页删除 |
 | 13 | 先录音再文字语音 | `alarm/AlarmPlaybackEngine.kt` | 每轮顺序：录音 → 语音；两者可只配其一 |
-| 14 | 锁屏 / 后台正常触发 | `alarm/AlarmScheduler.kt`、`AlarmService.kt`、`AlarmReceiver.kt`、`BootReceiver.kt` | `setAlarmClock` + 前台服务 + 全屏通知（优先）＋ 兜底亮屏 + CPU/屏幕唤醒锁 + 开机恢复 |
+| 14 | 锁屏 / 后台正常触发 | `alarm/AlarmScheduler.kt`、`AlarmService.kt`、`AlarmReceiver.kt`、`BootReceiver.kt`、`GuardianService.kt`、`AlarmWatchdog.kt` | `setAlarmClock` + 前台服务 + 全屏通知（优先）＋ 兜底亮屏 + CPU/屏幕唤醒锁 + 开机恢复 + 后台守护服务 + 15 分钟自愈看门狗 |
 | 15 | 本地存储、无需账号 | `data/JsonStore.kt`、`AlarmRepository.kt`、`SettingsRepository.kt`、`RecordingStore.kt` | 原子写 JSON + 本地 m4a；无网络账号 |
 
 界面：全部组件自绘（双阴影拟态、自绘图标、滚轮、开关、滑杆、输入框），只有 Compose 官方 `foundation` / `material3` 的文本与主题骨架，没有第三方 UI 库或 DI 框架。应用图标与页内标识共用「柔光表盘 + V 形指针」语言，自适应图标、单色图标与 Android 12 启动屏保持一致。
@@ -287,6 +287,8 @@ base64 -w0 vocalarm-release.jks
 | 语音引擎恢复（模拟器） | 重新 `pm enable` 引擎后返回应用 | **通过**：`ON_RESUME` 重建引擎，提示自动消失；试听触发 `GoogleTTSServiceImpl: Synthesis request …`，无需重启应用 |
 | 闹钟自检面板（模拟器） | 关于页 → 闹钟自检 | **通过**：正确显示应用内/系统登记的下一个闹钟、最近收到系统闹钟、精确闹钟/通知/全屏通知/电池优化状态；电池受限时给出「允许后台运行」入口 |
 | 一键试响（模拟器） | 自检面板 → 10 秒后试响一次 → 立即锁屏 | **通过**：10 秒后 `AlarmRingActivity` 全屏置顶并点亮屏幕；`trigger.log` 记录 `deliveredAt` 与 `ringingAt`，面板显示「累计收到 1 次」 |
+| 后台守护（模拟器） | 启动应用后 `dumpsys activity services` / `dumpsys jobscheduler` | **通过**：`GuardianService` 为前台服务（`foregroundId=1010 types=0x40000000`），`JobScheduler` 登记 `7301 PERIODIC interval=15m PERSISTED` |
+| 上滑清理后响铃（模拟器） | 设 15:17 闹钟 → 回桌面 → 最近任务上滑清除 → 锁屏等待 | **通过**：进程被清理后由 `START_STICKY` 拉起（PID 变化、服务恢复前台），闹钟仍登记为 15:17；到点 `AlarmRingActivity` 全屏置顶并点亮屏幕 |
 
 单测覆盖的核心逻辑：
 
@@ -320,6 +322,7 @@ base64 -w0 vocalarm-release.jks
 
 - **屏幕亮着时的全屏**：Android 10 起禁止后台启动 Activity，全屏闹钟只能由「全屏 Intent」拉起；而系统只在屏幕熄灭或锁屏时展开全屏 Intent，屏幕亮着且已解锁时按设计只显示带操作按钮的横幅。系统自带时钟是特权应用，第三方应用无法完全复刻这一行为。Vocalarm 的处理：**先发全屏通知、不主动碰屏幕**，由系统点亮屏幕并全屏响铃；正在使用手机时给出带「停止 / 稍后 5 分钟 / 稍后 10 分钟」的横幅，点按即可进入响铃页，声音与震动不依赖屏幕是否点亮。只有全屏通知不可用（通知被关或权限被撤销）时才由应用自己点亮屏幕，3 秒兜底逻辑则用于个别静默丢弃全屏 Intent 的 ROM。
 - **「强行停止」会撤销闹钟**：从系统设置里「强行停止」应用、或部分清理软件执行同等操作后，Android 会把应用置为 stopped 状态并撤销它注册的全部闹钟与广播接收器，直到用户再次手动打开应用为止——这不是本应用的行为，任何第三方应用都无法绕过。Vocalarm 在每次进程启动时都会 `rescheduleAll()` 重新登记，所以**打开一次应用即可恢复**；日常清理请只使用「最近任务上滑」，不要用「强行停止 / 强制结束」。
+- **「最近任务上滑」的保底机制**：`GuardianService` 是一个可选的前台服务（`stopWithTask=false`、`specialUse` 类型，通知渠道沿用低优先级的「响铃中」渠道），进程被上滑清理后由系统按 `START_STICKY` 拉起；`onTaskRemoved` 会立刻重新登记全部闹钟，覆盖「清理任务时顺带清掉闹钟」的 ROM。另有一个 `JobScheduler` 周期任务（15 分钟、`setPersisted`）作为兜底：即使进程被杀，系统也会在下次调度时把应用唤起并把漏掉的闹钟补登记回去。二者都不做任何后台计算，只调用一次 `AlarmManager.setAlarmClock`。
 - **闹钟自检**：关于页提供「闹钟自检」面板，直接读出系统侧事实——应用内下一个闹钟、`AlarmManager.getNextAlarmClock()` 登记的下一个闹钟、最近一次收到系统闹钟的时间与累计次数，以及精确闹钟/通知/全屏通知/电池优化四项状态。`AlarmReceiver` 在启动服务前把送达时间写入 `files/trigger.log`（`AlarmService` 再写入响铃时间），因此「到点后时间戳没有更新」可以明确判定为系统没有送达，而不是响铃失败。面板还提供「10 秒后试响一次」，走真实的 `AlarmManager → Receiver → Service → 全屏通知` 链路，用于快速验证锁屏、清理后台后的行为。
 - **全屏通知权限**：Android 14+ 的「全屏通知」默认只授予通话与闹钟类应用，部分厂商 ROM 对侧载应用默认关闭。关闭后系统会静默降级成横幅；首页顶部会显示提示条，点击可直达该设置页。
 - **厂商 ROM 的额外开关**：小米 / 红米需要在「应用设置 → 权限管理」中允许「后台弹出界面」与「锁屏显示」；华为 / 荣耀需要在「应用启动管理」中允许自启动与后台活动。这些开关没有公开 API，应用无法自行检测或跳转。

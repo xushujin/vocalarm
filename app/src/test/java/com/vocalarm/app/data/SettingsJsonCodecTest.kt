@@ -22,6 +22,25 @@ class SettingsJsonCodecTest {
         assertEquals(1, file.sourceSchema)
         assertEquals("ink", file.settings.paletteId)
         assertEquals(0L, file.settings.lastUpdateCheckAt)
+        assertTrue("guardian defaults to on for upgraded installs", file.settings.guardianEnabled)
+    }
+
+    @Test
+    fun versionTwoSettingsGainGuardianEnabled() {
+        val file = SettingsJsonCodec.decode(
+            """{"schemaVersion":2,"paletteId":"moss","lastUpdateCheckAt":123}""",
+        )
+        assertEquals(2, file.sourceSchema)
+        assertEquals("moss", file.settings.paletteId)
+        assertEquals(123L, file.settings.lastUpdateCheckAt)
+        assertTrue(file.settings.guardianEnabled)
+    }
+
+    @Test
+    fun guardianFlagSurvivesRoundTrip() {
+        val settings = AppSettings(paletteId = "mist", guardianEnabled = false)
+        val decoded = SettingsJsonCodec.decode(SettingsJsonCodec.encode(settings)).settings
+        assertEquals(false, decoded.guardianEnabled)
     }
 
     @Test

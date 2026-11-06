@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vocalarm.app.VocalarmApp
+import com.vocalarm.app.alarm.GuardianService
 import com.vocalarm.app.ui.theme.Palettes
 import com.vocalarm.app.ui.theme.VocalarmTheme
 
@@ -22,6 +23,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         requestedTab = intent.getStringExtra(EXTRA_TAB)
         val container = (application as VocalarmApp).container
+        // Starting a foreground service is always allowed from a visible activity, so this is the
+        // reliable place to bring the guardian up if the background attempt was refused.
+        if (container.settingsRepository.settings.value.guardianEnabled) {
+            GuardianService.start(this)
+        }
         setContent {
             val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
             VocalarmTheme(palette = Palettes.byId(settings.paletteId)) {

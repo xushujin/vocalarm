@@ -54,6 +54,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vocalarm.app.AppContainer
 import com.vocalarm.app.BuildConfig
 import com.vocalarm.app.R
+import com.vocalarm.app.alarm.GuardianService
 import com.vocalarm.app.alarm.NotificationChannels
 import com.vocalarm.app.domain.AlarmTime
 import com.vocalarm.app.ui.Eyebrow
@@ -332,6 +333,7 @@ private fun DiagnosticsCard(container: AppContainer) {
     var notifications by remember { mutableStateOf(true) }
     var fullScreen by remember { mutableStateOf(true) }
     var batteryLimited by remember { mutableStateOf(false) }
+    var guardianOn by remember { mutableStateOf(true) }
     val testMissingText = stringResource(R.string.diag_test_missing)
     val testToastText = stringResource(R.string.diag_test_toast)
 
@@ -349,6 +351,7 @@ private fun DiagnosticsCard(container: AppContainer) {
         notifications = NotificationChannels.areNotificationsEnabled(context)
         fullScreen = NotificationChannels.canUseFullScreenIntent(context)
         batteryLimited = powerManager?.isIgnoringBatteryOptimizations(context.packageName) != true
+        guardianOn = container.settingsRepository.settings.value.guardianEnabled
     }
 
     LaunchedEffect(Unit) { refresh() }
@@ -413,6 +416,31 @@ private fun DiagnosticsCard(container: AppContainer) {
                     if (batteryLimited) R.string.diag_battery_limited else R.string.diag_battery_ok,
                 ),
                 ok = !batteryLimited,
+            )
+            DiagRow(
+                label = stringResource(R.string.diag_guardian),
+                value = stringResource(
+                    when {
+                        GuardianService.running -> R.string.diag_guardian_running
+                        guardianOn -> R.string.diag_guardian_on
+                        else -> R.string.diag_guardian_off
+                    },
+                ),
+                ok = guardianOn,
+            )
+            Spacer(Modifier.height(8.dp))
+            NeuButton(
+                text = stringResource(
+                    if (guardianOn) R.string.guardian_disable else R.string.guardian_enable,
+                ),
+                onClick = {
+                    val next = !guardianOn
+                    container.settingsRepository.setGuardianEnabled(next)
+                    guardianOn = next
+                    if (next) GuardianService.start(context) else GuardianService.stop(context)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                height = 42.dp,
             )
             if (batteryLimited) {
                 Spacer(Modifier.height(8.dp))

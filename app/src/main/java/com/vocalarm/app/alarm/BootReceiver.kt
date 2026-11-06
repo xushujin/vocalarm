@@ -16,6 +16,10 @@ class BootReceiver : BroadcastReceiver() {
         if (action !in HANDLED_ACTIONS) return
         val app = context.applicationContext as? VocalarmApp ?: return
         app.container.scheduler.rescheduleAll()
+        AlarmWatchdog.schedule(context)
+        if (app.container.settingsRepository.settings.value.guardianEnabled) {
+            GuardianService.start(context)
+        }
     }
 
     private companion object {
