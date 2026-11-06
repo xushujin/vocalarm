@@ -55,7 +55,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -211,19 +210,6 @@ fun Modifier.neuSurface(
                         ),
                     )
                 }
-                drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            dark.copy(alpha = 0.12f),
-                            Color.Transparent,
-                            light.copy(alpha = 0.20f),
-                        ),
-                    ),
-                    topLeft = Offset(0.75f, 0.75f),
-                    size = Size(size.width - 1.5f, size.height - 1.5f),
-                    cornerRadius = CornerRadius(corner - 0.75f),
-                    style = Stroke(width = 1f),
-                )
             }
         }
     }
@@ -651,7 +637,8 @@ fun NeuChip(
                         .background(palette.accentGradient, shape)
                         .border(1.dp, Color.White.copy(alpha = 0.18f), shape)
                 } else {
-                    Modifier.border(1.dp, palette.hairline, shape)
+                    // No hairline rim: the raised shadow alone separates the chip from the card.
+                    Modifier
                 },
             )
             .clickable(

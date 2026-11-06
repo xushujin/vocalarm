@@ -37,7 +37,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -319,18 +320,18 @@ private fun NextAlarmHero(alarm: Alarm, triggerAt: Long, now: Long, onClick: () 
     ) {
         Box(Modifier.fillMaxWidth()) {
             Canvas(Modifier.matchParentSize()) {
-                val stroke = 1.dp.toPx()
+                // Soft blooms only: a 1dp stroked ring reads as a stray hairline across the card.
                 drawCircle(
-                    color = palette.accent.copy(alpha = 0.10f),
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            palette.accent.copy(alpha = 0.16f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(size.width * 0.96f, -size.height * 0.10f),
+                        radius = size.width * 0.46f,
+                    ),
                     radius = size.width * 0.46f,
                     center = Offset(size.width * 0.96f, -size.height * 0.10f),
-                    style = Stroke(width = stroke),
-                )
-                drawCircle(
-                    color = palette.accent.copy(alpha = 0.07f),
-                    radius = size.width * 0.34f,
-                    center = Offset(size.width * 0.96f, -size.height * 0.10f),
-                    style = Stroke(width = stroke),
                 )
                 drawCircle(
                     color = palette.accent.copy(alpha = 0.08f),
