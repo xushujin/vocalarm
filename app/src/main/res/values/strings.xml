@@ -140,6 +140,8 @@
     <string name="editor_recording_failed">录音失败：%1$s</string>
     <string name="editor_mic_permission">需要麦克风权限才能录音</string>
     <string name="editor_tts_unavailable">系统语音引擎不可用，暂时无法试听</string>
+    <string name="editor_tts_no_engine">没有检测到语音引擎，安装或启用一个即可试听</string>
+    <string name="editor_tts_settings">语音设置</string>
     <string name="editor_discard_title">放弃修改？</string>
     <string name="editor_discard_body">当前修改还没有保存。</string>
     <string name="editor_discard_confirm">放弃</string>

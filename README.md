@@ -257,6 +257,11 @@ base64 -w0 vocalarm-release.jks
 
 响铃时的顺序至关重要：**先发全屏通知，再按需点亮屏幕**。系统只在屏幕熄灭或锁屏时才展开全屏 Intent；如果应用先把屏幕点亮，系统会判定设备正在使用中，转而下发一条横幅。因此 `AlarmService` 只在两种情况下自己点亮屏幕——通知权限被关闭、或全屏通知权限未授予——并在全屏通知发出 3 秒后仍未见响铃页、且屏幕仍处于熄灭状态时兜底点亮，避免个别 ROM 静默丢弃全屏 Intent 后毫无反应。
 
+文字转语音通过系统 `TextToSpeech` 完成，因此需要两件事同时成立：
+
+- 设备上装了语音引擎（很多国产 ROM 默认不带 Google TTS，但通常自带讯飞/小爱等引擎），且该引擎已启用；
+- 应用能在 Android 11+ 的包可见性规则下“看见”引擎。清单里必须声明 `android.intent.action.TTS_SERVICE` 的 `<queries>`，否则即使手机装了引擎，`TextToSpeech` 初始化也会返回 `ERROR`，界面只会显示「系统语音引擎不可用」。`TtsEngine` 在初始化失败时用 `queryIntentServices` 区分「没有引擎」与「引擎初始化失败」，编辑页据此显示不同提示，并提供直达系统「语音设置」的按钮；用户装好/切换引擎回到应用时，`Lifecycle.ON_RESUME` 会重建引擎，不需要重启应用。
+
 ---
 
 ## 9. 测试与验证记录
@@ -278,6 +283,8 @@ base64 -w0 vocalarm-release.jks
 | 进程被杀死后触发（模拟器） | 应用退到桌面后 `kill -9` 进程、熄屏，到点由系统拉起进程 | **通过**：进程冷启动 → 前台服务（`exactAllowReason=policy_permission`）→ 系统点亮屏幕并全屏响铃；响铃页停止后自动关闭，一次性闹钟不再残留次日重响 |
 | 全屏通知权限被关闭（模拟器） | `cmd appops set … USE_FULL_SCREEN_INTENT deny` | **通过**：首页出现「全屏提醒未开启」提示条；响铃时由应用自己的 `Vocalarm:RingScreen` 唤醒屏幕并只显示横幅。权限恢复后提示条消失 |
 | 亮屏解锁时触发（模拟器） | 屏幕点亮并停留在桌面 | **符合系统设计**：不接管屏幕，显示带「停止 / 稍后 5 分钟 / 稍后 10 分钟」的横幅；点按可进入响铃页 |
+| 语音引擎缺失（模拟器） | `pm disable-user com.google.android.tts` 后进入编辑页 | **通过**：语音卡片出现「没有检测到语音引擎…」与「语音设置」按钮；点击进入 `Settings$TextToSpeechSettingsActivity` |
+| 语音引擎恢复（模拟器） | 重新 `pm enable` 引擎后返回应用 | **通过**：`ON_RESUME` 重建引擎，提示自动消失；试听触发 `GoogleTTSServiceImpl: Synthesis request …`，无需重启应用 |
 
 单测覆盖的核心逻辑：
 
@@ -294,7 +301,7 @@ base64 -w0 vocalarm-release.jks
 本机没有 Android 真机，以下项目只有模拟器（API 36 google_apis、swiftshader）证据或完全没有运行证据：
 
 - 录音、试听、暂停续播的实际音频链路（模拟器无麦克风输入）；
-- 系统 TTS 是否安装、中文音色列表与「男声/女声」映射的实际结果（本次测试的模拟器没有 TTS 引擎，响铃直接走了「音频失败 + 震动」兜底，顺带验证了该兜底路径）；
+- 系统 TTS 的中文音色列表与「男声/女声」映射在真机上的结果（模拟器装有 Google TTS，试听可触发真实合成请求 `Synthesis request for locale zho-CHN`，但不同厂商引擎的音色与特性差异无法覆盖）；引擎缺失时的提示与恢复路径已单独验证；
 - 厂商 ROM（MIUI / HyperOS、EMUI、ColorOS）对全屏 Intent、后台弹出、锁屏显示的额外拦截；
 - 开机恢复、改时区恢复；
 - 应用内更新的真实下载、进度通知与 PackageInstaller 安装；

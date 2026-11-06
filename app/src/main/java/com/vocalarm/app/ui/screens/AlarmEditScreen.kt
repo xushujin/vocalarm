@@ -1,7 +1,10 @@
 package com.vocalarm.app.ui.screens
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -59,10 +62,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vocalarm.app.AppContainer
 import com.vocalarm.app.R
+import com.vocalarm.app.audio.TtsEngine
 import com.vocalarm.app.audio.VoiceRecorder
 import com.vocalarm.app.domain.Alarm
 import com.vocalarm.app.domain.LoopMode
@@ -132,6 +138,7 @@ fun AlarmEditScreen(
     val recordingState by viewModel.recordingState.collectAsStateWithLifecycle()
     val preview by viewModel.preview.collectAsStateWithLifecycle()
     val previewingSpeech by viewModel.previewingSpeech.collectAsStateWithLifecycle()
+    val ttsFailure by viewModel.ttsFailure.collectAsStateWithLifecycle()
     val voices by viewModel.voices.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val saved by viewModel.saved.collectAsStateWithLifecycle()
@@ -180,6 +187,8 @@ fun AlarmEditScreen(
             viewModel.consumeMessage()
         }
     }
+    // Coming back from the system speech settings is the moment an engine may have appeared.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.retryTtsIfUnavailable() }
     BackHandler { requestClose() }
 
     Box(
@@ -232,8 +241,10 @@ fun AlarmEditScreen(
                     SpeechCard(
                         draft = draft,
                         previewingSpeech = previewingSpeech,
+                        ttsFailure = ttsFailure,
                         onTextChange = viewModel::setText,
                         onTogglePreview = viewModel::toggleSpeechPreview,
+                        onOpenTtsSettings = { openTtsSettings(context) },
                     )
                 }
                 item {
@@ -655,8 +666,10 @@ private fun RecordingCard(
 private fun SpeechCard(
     draft: AlarmDraft,
     previewingSpeech: Boolean,
+    ttsFailure: TtsEngine.Failure?,
     onTextChange: (String) -> Unit,
     onTogglePreview: () -> Unit,
+    onOpenTtsSettings: () -> Unit,
 ) {
     val palette = LocalPalette.current
     NeuCard(modifier = Modifier.fillMaxWidth(), radius = 26.dp, depth = 7.dp) {
@@ -703,9 +716,45 @@ private fun SpeechCard(
                     color = palette.muted,
                 )
             }
+            if (ttsFailure != null) {
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stringResource(
+                            if (ttsFailure == TtsEngine.Failure.NoEngine) {
+                                R.string.editor_tts_no_engine
+                            } else {
+                                R.string.editor_tts_unavailable
+                            },
+                        ),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.danger,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    NeuButton(
+                        text = stringResource(R.string.editor_tts_settings),
+                        onClick = onOpenTtsSettings,
+                        height = 36.dp,
+                    )
+                }
+            }
         }
     }
 }
+
+/** Opens the system text-to-speech settings where engines are installed or picked. */
+private fun openTtsSettings(context: Context) {
+    runCatching { context.startActivity(Intent(TTS_SETTINGS_ACTION)) }
+        .recoverCatching {
+            context.startActivity(
+                Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+}
+
+/** Not exposed as a constant by the SDK; every AOSP-based Settings app handles this action. */
+private const val TTS_SETTINGS_ACTION = "com.android.settings.TTS_SETTINGS"
 
 @Composable
 private fun VoiceCard(

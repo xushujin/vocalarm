@@ -84,6 +84,7 @@ class AlarmEditViewModel(
     val preview: StateFlow<PreviewState> = player.preview
     val previewError: StateFlow<String?> = player.previewError
     val ttsStatus: StateFlow<TtsEngine.Status> = tts.status
+    val ttsFailure: StateFlow<TtsEngine.Failure?> = tts.failure
     val voices: StateFlow<List<VoiceDescriptor>> = tts.voices
 
     private val _previewingSpeech = MutableStateFlow(false)
@@ -282,6 +283,9 @@ class AlarmEditViewModel(
         _previewingSpeech.value = true
         val snapshot = _draft.value
         viewModelScope.launch {
+            // The engine may have been installed or switched while this screen was in the
+            // background; rebuild it once before giving up.
+            if (tts.status.value == TtsEngine.Status.Unavailable) tts.retry()
             val result = tts.speak(
                 text = text,
                 rate = snapshot.speechRate,
@@ -298,6 +302,11 @@ class AlarmEditViewModel(
                 }
             }
         }
+    }
+
+    /** Rebuilds the speech engine after the user comes back from the system TTS settings. */
+    fun retryTtsIfUnavailable() {
+        if (tts.status.value == TtsEngine.Status.Unavailable) tts.retry()
     }
 
     // ---------------------------------------------------------------- persistence

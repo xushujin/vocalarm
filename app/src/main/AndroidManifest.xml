@@ -19,6 +19,17 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!--
+        Android 11+ hides other packages from the app unless it declares the interaction. Without
+        this, TextToSpeech cannot see any engine and initialisation fails with ERROR, which surfaces
+        as "系统语音引擎不可用" even when the phone has a perfectly good engine installed.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:name=".VocalarmApp"
         android:allowBackup="false"

@@ -33,6 +33,9 @@ class TtsEngine(context: Context) {
 
     enum class Status { Initializing, Ready, Unavailable }
 
+    /** Why [Status.Unavailable] was reported, so the UI can point at the right fix. */
+    enum class Failure { NoEngine, InitFailed }
+
     private val pending = ConcurrentHashMap<String, CancellableContinuation<Result<Unit>>>()
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -45,6 +48,10 @@ class TtsEngine(context: Context) {
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
+    private val _failure = MutableStateFlow<Failure?>(null)
+    val failure: StateFlow<Failure?> = _failure.asStateFlow()
+
+    private val appContext = context.applicationContext
     private var textToSpeech: TextToSpeech? = null
 
     private val progressListener = object : UtteranceProgressListener() {
@@ -68,8 +75,12 @@ class TtsEngine(context: Context) {
     }
 
     init {
+        createEngine()
+    }
+
+    private fun createEngine() {
         val created = runCatching {
-            TextToSpeech(context.applicationContext) { initStatus ->
+            TextToSpeech(appContext) { initStatus ->
                 if (textToSpeech == null) {
                     // The engine called back before the constructor returned; wait for assignment.
                     mainHandler.post { onInitialized(initStatus) }
@@ -80,18 +91,47 @@ class TtsEngine(context: Context) {
         }.getOrNull()
         textToSpeech = created
         if (created == null) {
-            _status.value = Status.Unavailable
-            _lastError.value = "tts-init-exception"
+            markUnavailable("tts-init-exception")
         }
     }
+
+    /**
+     * Rebuilds the engine. Needed after the user installs, enables or switches a TTS engine in the
+     * system settings: the instance created at process start stays dead otherwise.
+     */
+    fun retry() {
+        if (_status.value != Status.Unavailable) return
+        textToSpeech?.let { engine -> runCatching { engine.shutdown() } }
+        textToSpeech = null
+        _failure.value = null
+        _lastError.value = null
+        _status.value = Status.Initializing
+        createEngine()
+    }
+
+    private fun markUnavailable(error: String) {
+        _status.value = Status.Unavailable
+        _lastError.value = error
+        _failure.value = if (hasInstalledEngine()) Failure.InitFailed else Failure.NoEngine
+    }
+
+    /** Package visibility for TTS is granted by the `<queries>` entry in the manifest. */
+    private fun hasInstalledEngine(): Boolean = runCatching {
+        appContext.packageManager
+            .queryIntentServices(
+                android.content.Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE),
+                0,
+            )
+            .isNotEmpty()
+    }.getOrDefault(false)
 
     private fun onInitialized(initStatus: Int) {
         val engine = textToSpeech ?: return
         if (initStatus != TextToSpeech.SUCCESS) {
-            _status.value = Status.Unavailable
-            _lastError.value = "tts-init-$initStatus"
+            markUnavailable("tts-init-$initStatus")
             return
         }
+        _failure.value = null
         runCatching {
             engine.setAudioAttributes(
                 AudioAttributes.Builder()
