@@ -4,6 +4,7 @@ import android.content.Context
 import com.vocalarm.app.alarm.AlarmPlaybackEngine
 import com.vocalarm.app.alarm.AlarmScheduler
 import com.vocalarm.app.alarm.RingingState
+import com.vocalarm.app.alarm.TriggerLog
 import com.vocalarm.app.audio.AudioPlayer
 import com.vocalarm.app.audio.TtsEngine
 import com.vocalarm.app.audio.VoiceRecorder
@@ -48,6 +49,8 @@ class AppContainer(context: Context) {
     val playback = AlarmPlaybackEngine(player, tts)
 
     val scheduler = AlarmScheduler(appContext, alarmRepository)
+
+    val triggerLog = TriggerLog(File(appContext.filesDir, "trigger.log"))
 
     val ringing = RingingState()
 

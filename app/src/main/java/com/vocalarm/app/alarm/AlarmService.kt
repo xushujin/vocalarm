@@ -120,6 +120,7 @@ class AlarmService : Service() {
         activeAlarm = alarm
         ringScreenShown = false
         container.ringing.start(alarm, isSnooze)
+        container.triggerLog.recordRinging()
 
         // Keep the series alive before audio starts: a crash during playback must not skip tomorrow.
         if (!isSnooze) {

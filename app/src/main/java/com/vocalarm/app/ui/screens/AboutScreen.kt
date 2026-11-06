@@ -1,7 +1,14 @@
 package com.vocalarm.app.ui.screens
 
+import android.app.AlarmManager
+import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import android.text.format.Formatter
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -24,7 +31,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -44,6 +54,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vocalarm.app.AppContainer
 import com.vocalarm.app.BuildConfig
 import com.vocalarm.app.R
+import com.vocalarm.app.alarm.NotificationChannels
+import com.vocalarm.app.domain.AlarmTime
 import com.vocalarm.app.ui.Eyebrow
 import com.vocalarm.app.ui.NeuProgressBar
 import com.vocalarm.app.ui.StatusPill
@@ -60,6 +72,10 @@ import com.vocalarm.app.ui.updateErrorText
 import com.vocalarm.app.update.ApkInstaller
 import com.vocalarm.app.update.UpdateUiState
 import com.vocalarm.app.ui.vm.AboutViewModel
+import java.text.SimpleDateFormat
+import java.time.ZoneId
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun AboutScreen(container: AppContainer, modifier: Modifier = Modifier) {
@@ -126,6 +142,7 @@ fun AboutScreen(container: AppContainer, modifier: Modifier = Modifier) {
             )
         }
         item { PermissionsCard() }
+        item { DiagnosticsCard(container) }
         item {
             UpdateCard(
                 state = updateState,
@@ -246,6 +263,7 @@ private fun PermissionsCard() {
         R.string.perm_notifications,
         R.string.perm_full_screen,
         R.string.perm_exact_alarm,
+        R.string.perm_battery,
         R.string.perm_foreground,
         R.string.perm_boot,
         R.string.perm_wake,
@@ -296,6 +314,187 @@ private fun PermissionsCard() {
                 color = palette.muted,
             )
         }
+    }
+}
+
+@Composable
+private fun DiagnosticsCard(container: AppContainer) {
+    val palette = LocalPalette.current
+    val context = LocalContext.current
+    val alarmManager = remember { context.getSystemService(AlarmManager::class.java) }
+    val powerManager = remember { context.getSystemService(PowerManager::class.java) }
+
+    var appNext by remember { mutableLongStateOf(0L) }
+    var systemNext by remember { mutableLongStateOf(0L) }
+    var deliveredAt by remember { mutableLongStateOf(0L) }
+    var deliveredCount by remember { mutableIntStateOf(0) }
+    var exact by remember { mutableStateOf(true) }
+    var notifications by remember { mutableStateOf(true) }
+    var fullScreen by remember { mutableStateOf(true) }
+    var batteryLimited by remember { mutableStateOf(false) }
+    val testMissingText = stringResource(R.string.diag_test_missing)
+    val testToastText = stringResource(R.string.diag_test_toast)
+
+    fun refresh() {
+        val snapshot = container.triggerLog.read()
+        deliveredAt = snapshot.lastDeliveredAt
+        deliveredCount = snapshot.deliveredCount
+        val now = System.currentTimeMillis()
+        appNext = container.alarmRepository.alarms.value
+            .filter { it.enabled }
+            .mapNotNull { AlarmTime.nextTriggerMillis(it, now, ZoneId.systemDefault()) }
+            .minOrNull() ?: 0L
+        systemNext = alarmManager?.nextAlarmClock?.triggerTime ?: 0L
+        exact = container.scheduler.canScheduleExact()
+        notifications = NotificationChannels.areNotificationsEnabled(context)
+        fullScreen = NotificationChannels.canUseFullScreenIntent(context)
+        batteryLimited = powerManager?.isIgnoringBatteryOptimizations(context.packageName) != true
+    }
+
+    LaunchedEffect(Unit) { refresh() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh() }
+
+    NeuCard(
+        modifier = Modifier.fillMaxWidth(),
+        radius = 24.dp,
+        depth = 6.dp,
+        contentPadding = PaddingValues(18.dp),
+    ) {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NeuIconTile(icon = VIcon.Info, size = 38.dp)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = stringResource(R.string.about_section_diagnostics),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = palette.textPrimary,
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            DiagRow(
+                label = stringResource(R.string.diag_app_next),
+                value = if (appNext > 0L) formatStamp(appNext) else stringResource(R.string.diag_none),
+                ok = appNext > 0L,
+            )
+            DiagRow(
+                label = stringResource(R.string.diag_system_next),
+                value = if (systemNext > 0L) formatStamp(systemNext) else stringResource(R.string.diag_none),
+                ok = systemNext > 0L,
+            )
+            DiagRow(
+                label = stringResource(R.string.diag_last_delivery),
+                value = if (deliveredAt > 0L) {
+                    stringResource(R.string.diag_delivery_count, deliveredCount) + " · " + formatStamp(deliveredAt)
+                } else {
+                    stringResource(R.string.diag_never)
+                },
+                ok = deliveredAt > 0L,
+            )
+            DiagRow(
+                label = stringResource(R.string.diag_exact),
+                value = stringResource(if (exact) R.string.diag_granted else R.string.diag_denied),
+                ok = exact,
+            )
+            DiagRow(
+                label = stringResource(R.string.diag_notifications),
+                value = stringResource(if (notifications) R.string.diag_enabled else R.string.diag_disabled),
+                ok = notifications,
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                DiagRow(
+                    label = stringResource(R.string.diag_full_screen),
+                    value = stringResource(if (fullScreen) R.string.diag_enabled else R.string.diag_disabled),
+                    ok = fullScreen,
+                )
+            }
+            DiagRow(
+                label = stringResource(R.string.diag_battery),
+                value = stringResource(
+                    if (batteryLimited) R.string.diag_battery_limited else R.string.diag_battery_ok,
+                ),
+                ok = !batteryLimited,
+            )
+            if (batteryLimited) {
+                Spacer(Modifier.height(8.dp))
+                NeuButton(
+                    text = stringResource(R.string.diag_battery_action),
+                    onClick = { requestIgnoreBatteryOptimizations(context) },
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 42.dp,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            NeuButton(
+                text = stringResource(R.string.diag_test),
+                onClick = {
+                    val target = container.alarmRepository.alarms.value
+                        .firstOrNull { it.enabled }
+                        ?: container.alarmRepository.alarms.value.firstOrNull()
+                    if (target == null) {
+                        Toast.makeText(context, testMissingText, Toast.LENGTH_SHORT).show()
+                    } else {
+                        container.scheduler.scheduleTest(target.id, TEST_DELAY_MS)
+                        Toast.makeText(context, testToastText, Toast.LENGTH_LONG).show()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                height = 42.dp,
+            )
+            Spacer(Modifier.height(10.dp))
+            NeuDivider()
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.diag_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.muted,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DiagRow(label: String, value: String, ok: Boolean) {
+    val palette = LocalPalette.current
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            color = palette.textSecondary,
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (ok) palette.textPrimary else palette.danger,
+            textAlign = TextAlign.End,
+        )
+    }
+}
+
+private fun formatStamp(millis: Long): String =
+    SimpleDateFormat("M月d日 HH:mm", Locale.getDefault()).format(Date(millis))
+
+private const val TEST_DELAY_MS = 10_000L
+
+/**
+ * Asking for the battery exemption is deliberate here: an alarm clock that the ROM silences when
+ * the app is swiped away is useless, and this dialog is the only standard way to opt out.
+ */
+@SuppressLint("BatteryLife")
+private fun requestIgnoreBatteryOptimizations(context: Context) {
+    runCatching {
+        context.startActivity(
+            Intent(
+                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                "package:${context.packageName}".toUri(),
+            ),
+        )
+    }.recoverCatching {
+        context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
     }
 }
 

@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.vocalarm.app.R
+import com.vocalarm.app.VocalarmApp
 import com.vocalarm.app.ui.MainActivity
 
 /** Receives the exact alarm PendingIntent and hands the work to the foreground service. */
@@ -14,6 +15,10 @@ class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val alarmId = intent.getStringExtra(EXTRA_ALARM_ID) ?: return
         val snooze = intent.getBooleanExtra(EXTRA_SNOOZE, false)
+        // Record before doing anything that can fail: this is the proof the OS delivered the alarm.
+        runCatching {
+            (context.applicationContext as VocalarmApp).container.triggerLog.recordDelivered()
+        }
         val started = runCatching { AlarmService.start(context, alarmId, snooze) }.isSuccess
         if (!started) {
             postStartFailure(context)

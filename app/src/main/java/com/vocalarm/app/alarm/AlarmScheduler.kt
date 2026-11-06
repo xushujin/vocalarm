@@ -49,6 +49,14 @@ class AlarmScheduler(
         setAlarm(alarmId, triggerAt, snooze = true)
     }
 
+    /**
+     * Fires a one-off test ring through the real alarm pipeline (system alarm -> receiver ->
+     * service -> full-screen notification) without touching the alarm's own schedule.
+     */
+    fun scheduleTest(alarmId: String, delayMillis: Long) {
+        setAlarm(alarmId, System.currentTimeMillis() + delayMillis, snooze = true)
+    }
+
     fun cancel(id: String) {
         cancelPending(id, snooze = false)
         cancelPending(id, snooze = true)
