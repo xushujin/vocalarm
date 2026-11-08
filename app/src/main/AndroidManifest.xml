@@ -75,7 +75,7 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
-        <!-- Keeps the process (and therefore the alarms) alive when the task is swiped away. -->
+        <!-- Optional background protection; scheduled alarms are owned by AlarmManager. -->
         <service
             android:name=".alarm.GuardianService"
             android:exported="false"

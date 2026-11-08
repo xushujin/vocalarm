@@ -9,9 +9,9 @@ import android.content.Context
 import com.vocalarm.app.VocalarmApp
 
 /**
- * Periodic safety net: every 15 minutes the system wakes us for a few milliseconds and we put every
- * enabled alarm back into AlarmManager. Vendor cleaners that drop alarms together with the app are
- * repaired long before the next wake-up time, without any user interaction.
+ * Best-effort repair using a periodic job with a 15-minute minimum interval. Doze, job quotas and
+ * vendor restrictions can delay or prevent execution; this is not an on-time alarm delivery path.
+ * Restore saved occurrences whenever the system allows the job to run.
  */
 class AlarmWatchdogJobService : JobService() {
 

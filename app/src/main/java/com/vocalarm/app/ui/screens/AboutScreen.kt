@@ -328,18 +328,25 @@ private fun DiagnosticsCard(container: AppContainer) {
     var appNext by remember { mutableLongStateOf(0L) }
     var systemNext by remember { mutableLongStateOf(0L) }
     var deliveredAt by remember { mutableLongStateOf(0L) }
+    var ringingAt by remember { mutableLongStateOf(0L) }
     var deliveredCount by remember { mutableIntStateOf(0) }
     var exact by remember { mutableStateOf(true) }
     var notifications by remember { mutableStateOf(true) }
     var fullScreen by remember { mutableStateOf(true) }
     var batteryLimited by remember { mutableStateOf(false) }
     var guardianOn by remember { mutableStateOf(true) }
+    var guardianRunning by remember { mutableStateOf(false) }
+    val isOplusDevice = remember {
+        Build.MANUFACTURER.lowercase(Locale.ROOT) in setOf("oppo", "oneplus", "realme", "oplus")
+    }
     val testMissingText = stringResource(R.string.diag_test_missing)
     val testToastText = stringResource(R.string.diag_test_toast)
+    val testFailedText = stringResource(R.string.diag_test_failed)
 
     fun refresh() {
         val snapshot = container.triggerLog.read()
         deliveredAt = snapshot.lastDeliveredAt
+        ringingAt = snapshot.lastRingingAt
         deliveredCount = snapshot.deliveredCount
         val now = System.currentTimeMillis()
         appNext = container.alarmRepository.alarms.value
@@ -352,6 +359,7 @@ private fun DiagnosticsCard(container: AppContainer) {
         fullScreen = NotificationChannels.canUseFullScreenIntent(context)
         batteryLimited = powerManager?.isIgnoringBatteryOptimizations(context.packageName) != true
         guardianOn = container.settingsRepository.settings.value.guardianEnabled
+        guardianRunning = GuardianService.running
     }
 
     LaunchedEffect(Unit) { refresh() }
@@ -382,16 +390,26 @@ private fun DiagnosticsCard(container: AppContainer) {
             DiagRow(
                 label = stringResource(R.string.diag_system_next),
                 value = if (systemNext > 0L) formatStamp(systemNext) else stringResource(R.string.diag_none),
-                ok = systemNext > 0L,
+                ok = null,
             )
             DiagRow(
                 label = stringResource(R.string.diag_last_delivery),
                 value = if (deliveredAt > 0L) {
-                    stringResource(R.string.diag_delivery_count, deliveredCount) + " · " + formatStamp(deliveredAt)
+                    stringResource(R.string.diag_delivery_count, deliveredCount) + " · " +
+                        formatStamp(deliveredAt, withSeconds = true)
                 } else {
                     stringResource(R.string.diag_never)
                 },
                 ok = deliveredAt > 0L,
+            )
+            DiagRow(
+                label = stringResource(R.string.diag_last_ringing),
+                value = if (ringingAt > 0L) {
+                    formatStamp(ringingAt, withSeconds = true)
+                } else {
+                    stringResource(R.string.diag_never)
+                },
+                ok = null,
             )
             DiagRow(
                 label = stringResource(R.string.diag_exact),
@@ -421,12 +439,12 @@ private fun DiagnosticsCard(container: AppContainer) {
                 label = stringResource(R.string.diag_guardian),
                 value = stringResource(
                     when {
-                        GuardianService.running -> R.string.diag_guardian_running
+                        guardianRunning -> R.string.diag_guardian_running
                         guardianOn -> R.string.diag_guardian_on
                         else -> R.string.diag_guardian_off
                     },
                 ),
-                ok = guardianOn,
+                ok = guardianRunning,
             )
             Spacer(Modifier.height(8.dp))
             NeuButton(
@@ -438,6 +456,7 @@ private fun DiagnosticsCard(container: AppContainer) {
                     container.settingsRepository.setGuardianEnabled(next)
                     guardianOn = next
                     if (next) GuardianService.start(context) else GuardianService.stop(context)
+                    guardianRunning = GuardianService.running
                 },
                 modifier = Modifier.fillMaxWidth(),
                 height = 42.dp,
@@ -452,6 +471,21 @@ private fun DiagnosticsCard(container: AppContainer) {
                 )
             }
             Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(
+                    if (isOplusDevice) R.string.diag_background_oplus else R.string.diag_background_generic,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.textSecondary,
+            )
+            Spacer(Modifier.height(8.dp))
+            NeuButton(
+                text = stringResource(R.string.diag_app_settings),
+                onClick = { openAppSettings(context) },
+                modifier = Modifier.fillMaxWidth(),
+                height = 42.dp,
+            )
+            Spacer(Modifier.height(8.dp))
             NeuButton(
                 text = stringResource(R.string.diag_test),
                 onClick = {
@@ -461,8 +495,12 @@ private fun DiagnosticsCard(container: AppContainer) {
                     if (target == null) {
                         Toast.makeText(context, testMissingText, Toast.LENGTH_SHORT).show()
                     } else {
-                        container.scheduler.scheduleTest(target.id, TEST_DELAY_MS)
-                        Toast.makeText(context, testToastText, Toast.LENGTH_LONG).show()
+                        val scheduled = container.scheduler.scheduleTest(target.id, TEST_DELAY_MS)
+                        Toast.makeText(
+                            context,
+                            if (scheduled) testToastText else testFailedText,
+                            Toast.LENGTH_LONG,
+                        ).show()
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -481,7 +519,7 @@ private fun DiagnosticsCard(container: AppContainer) {
 }
 
 @Composable
-private fun DiagRow(label: String, value: String, ok: Boolean) {
+private fun DiagRow(label: String, value: String, ok: Boolean?) {
     val palette = LocalPalette.current
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
@@ -496,21 +534,24 @@ private fun DiagRow(label: String, value: String, ok: Boolean) {
         Spacer(Modifier.width(10.dp))
         Text(
             text = value,
+            modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodySmall,
-            color = if (ok) palette.textPrimary else palette.danger,
+            color = if (ok == false) palette.danger else palette.textPrimary,
             textAlign = TextAlign.End,
         )
     }
 }
 
-private fun formatStamp(millis: Long): String =
-    SimpleDateFormat("M月d日 HH:mm", Locale.getDefault()).format(Date(millis))
+private fun formatStamp(millis: Long, withSeconds: Boolean = false): String =
+    SimpleDateFormat(
+        if (withSeconds) "M月d日 HH:mm:ss" else "M月d日 HH:mm",
+        Locale.getDefault(),
+    ).format(Date(millis))
 
 private const val TEST_DELAY_MS = 10_000L
 
 /**
- * Asking for the battery exemption is deliberate here: an alarm clock that the ROM silences when
- * the app is swiped away is useless, and this dialog is the only standard way to opt out.
+ * Requests Android's Doze exemption. Vendor auto-start and cleanup controls are separate settings.
  */
 @SuppressLint("BatteryLife")
 private fun requestIgnoreBatteryOptimizations(context: Context) {
@@ -523,6 +564,20 @@ private fun requestIgnoreBatteryOptimizations(context: Context) {
         )
     }.recoverCatching {
         context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+    }.onFailure {
+        Toast.makeText(context, R.string.diag_settings_unavailable, Toast.LENGTH_LONG).show()
+    }
+}
+
+private fun openAppSettings(context: Context) {
+    runCatching {
+        context.startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri()),
+        )
+    }.recoverCatching {
+        context.startActivity(Intent(Settings.ACTION_SETTINGS))
+    }.onFailure {
+        Toast.makeText(context, R.string.diag_settings_unavailable, Toast.LENGTH_LONG).show()
     }
 }
 

@@ -11,12 +11,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 /**
- * Single source of truth for alarms. The in-memory list is updated immediately so the UI stays
- * responsive, while the file write happens on a serialised IO coroutine.
+ * Single source of truth for alarm definitions. Edits update memory and enqueue an IO write;
+ * scheduling flushes them before registering an alarm. Deletion commits before publishing its
+ * state so a process restart cannot resurrect a removed alarm.
  */
 class AlarmRepository(
     private val store: JsonStore,
@@ -32,7 +31,7 @@ class AlarmRepository(
     private val _readOnly = MutableStateFlow(false)
     val readOnly: StateFlow<Boolean> = _readOnly.asStateFlow()
 
-    private val writeMutex = Mutex()
+    private val writeLock = Any()
 
     init {
         load()
@@ -82,11 +81,14 @@ class AlarmRepository(
         return normalized
     }
 
-    fun delete(id: String): Alarm? {
-        val removed = find(id) ?: return null
-        _alarms.update { current -> current.filterNot { it.id == id } }
-        persist()
-        return removed
+    /** Persist deletion before cancelling its schedule or removing the referenced recording. */
+    fun delete(id: String): Alarm? = synchronized(writeLock) {
+        if (_readOnly.value) return@synchronized null
+        val removed = find(id) ?: return@synchronized null
+        val remaining = _alarms.value.filterNot { it.id == id }
+        if (!write(remaining)) return@synchronized null
+        _alarms.value = remaining
+        removed
     }
 
     fun setEnabled(id: String, enabled: Boolean): Alarm? {
@@ -101,18 +103,33 @@ class AlarmRepository(
         _issue.value = null
     }
 
+    fun reportSchedulingFailure(error: Throwable) {
+        _issue.value = StoreIssue.SaveFailed(error.message ?: error.javaClass.simpleName)
+    }
+
     private fun persist() {
         if (_readOnly.value) return
         scope.launch(Dispatchers.IO) {
-            writeMutex.withLock {
-                val snapshot = _alarms.value
-                runCatching { store.write(AlarmJsonCodec.encode(snapshot)) }
-                    .onFailure { error ->
-                        _issue.value = StoreIssue.SaveFailed(error.message ?: error.javaClass.simpleName)
-                    }
-            }
+            flush()
         }
     }
+
+    /**
+     * Commit the definition before registering a system alarm. The process can be killed as soon
+     * as the user swipes away the task; a PendingIntent without its saved definition cannot ring.
+     * Shares a lock with deferred writes so an older snapshot cannot overwrite this commit.
+     */
+    fun flush(): Boolean = synchronized(writeLock) {
+        if (_readOnly.value) return@synchronized false
+        write(_alarms.value)
+    }
+
+    private fun write(alarms: List<Alarm>): Boolean =
+        runCatching { store.write(AlarmJsonCodec.encode(alarms)) }
+            .onFailure { error ->
+                _issue.value = StoreIssue.SaveFailed(error.message ?: error.javaClass.simpleName)
+            }
+            .isSuccess
 }
 
 /** Keeps recording files in one place and prevents path traversal from a stale JSON value. */

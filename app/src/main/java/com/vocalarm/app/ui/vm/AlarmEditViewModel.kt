@@ -318,7 +318,10 @@ class AlarmEditViewModel(
             return false
         }
         val savedAlarm = repository.save(alarm)
-        scheduler.schedule(savedAlarm)
+        if (!scheduler.schedule(savedAlarm)) {
+            _message.value = "schedule-failed"
+            return false
+        }
         if (originalRecording != null && originalRecording != savedAlarm.recordingFile) {
             recordings.delete(originalRecording)
         }
@@ -329,8 +332,11 @@ class AlarmEditViewModel(
 
     fun delete(): Boolean {
         val alarm = original ?: return false
+        if (repository.delete(alarm.id) == null) {
+            _message.value = "delete-failed"
+            return false
+        }
         scheduler.cancel(alarm.id)
-        repository.delete(alarm.id)
         recordings.delete(alarm.recordingFile)
         recordings.cleanupOrphans(repository.alarms.value)
         _saved.value = true
@@ -351,7 +357,9 @@ class AlarmEditViewModel(
         tts.stop()
         if (!_saved.value) {
             val draftFile = _draft.value.recordingFile
-            if (draftFile != null && draftFile != originalRecording) {
+            if (draftFile != null && draftFile != originalRecording &&
+                repository.alarms.value.none { it.recordingFile == draftFile }
+            ) {
                 recordings.delete(draftFile)
             }
         }

@@ -16,9 +16,9 @@ import com.vocalarm.app.ui.MainActivity
 /**
  * Optional always-on companion service.
  *
- * A task swipe kills the app process on most ROMs, and several vendor ROMs go further and drop the
- * package's alarms with it. Keeping a foreground service alive makes the process survive the swipe,
- * and re-arming from [onTaskRemoved] covers the ROMs that remove the alarms anyway.
+ * Android's scheduled alarms can outlive the process. A foreground service can reduce cleanup on
+ * some vendor ROMs, and [onTaskRemoved] restores saved occurrences if this callback is delivered.
+ * Neither the callback nor START_STICKY is guaranteed under vendor restrictions or force-stop.
  */
 class GuardianService : Service() {
 
@@ -33,7 +33,7 @@ class GuardianService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // The task is gone but we are still alive: put every enabled alarm back into AlarmManager.
+        // Restore the same saved deadlines, including snoozes of disabled one-shot definitions.
         runCatching {
             (application as VocalarmApp).container.scheduler.rescheduleAll()
         }

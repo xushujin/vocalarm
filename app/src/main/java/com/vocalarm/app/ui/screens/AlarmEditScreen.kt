@@ -1197,6 +1197,8 @@ private fun VoiceOptionRow(
 @Composable
 private fun editorMessageText(raw: String): String = when {
     raw == "content-required" -> stringResource(R.string.editor_content_required)
+    raw == "schedule-failed" -> stringResource(R.string.editor_schedule_failed)
+    raw == "delete-failed" -> stringResource(R.string.editor_delete_failed)
     raw == "recording-too-short" -> stringResource(R.string.editor_recording_too_short)
     raw == "recording-active" -> stringResource(R.string.editor_recording_locked)
     raw == "recording-not-found" -> stringResource(R.string.editor_recording_not_found)

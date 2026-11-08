@@ -122,17 +122,8 @@ class AlarmService : Service() {
         container.ringing.start(alarm, isSnooze)
         container.triggerLog.recordRinging()
 
-        // Keep the series alive before audio starts: a crash during playback must not skip tomorrow.
-        if (!isSnooze) {
-            if (alarm.repeatDays.isEmpty()) {
-                container.alarmRepository.setEnabled(alarmId, false)
-                // A cold start re-armed this alarm for tomorrow before the broadcast arrived, so a
-                // one-shot alarm has to be cancelled explicitly or it rings again the next day.
-                container.scheduler.cancel(alarmId)
-            } else {
-                container.scheduler.schedule(alarm)
-            }
-        }
+        // The receiver already consumed this occurrence and scheduled the following repeat before
+        // starting the service. Playback must not cancel a separate snooze or diagnostic test.
 
         // Post the full-screen intent before touching the display. Android only expands one while
         // the screen is off or the keyguard is up; lighting the screen first would make the system
@@ -198,7 +189,17 @@ class AlarmService : Service() {
             stopRinging()
             return
         }
-        container.scheduler.scheduleSnooze(alarmId, minutes)
+        if (!container.scheduler.scheduleSnooze(alarmId, minutes)) {
+            val alarm = activeAlarm
+            if (alarm == null) {
+                stopRinging()
+            } else {
+                val message = getString(R.string.ring_snooze_failed)
+                container.ringing.setMessage(message)
+                updateNotification(alarm, message)
+            }
+            return
+        }
         postSnoozedNotification(minutes)
         stopRinging()
     }

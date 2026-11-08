@@ -77,8 +77,8 @@ class AlarmListViewModel(
     }
 
     fun delete(alarm: Alarm) {
+        repository.delete(alarm.id) ?: return
         scheduler.cancel(alarm.id)
-        repository.delete(alarm.id)
         recordings.delete(alarm.recordingFile)
         recordings.cleanupOrphans(repository.alarms.value)
     }
