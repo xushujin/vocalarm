@@ -54,9 +54,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vocalarm.app.AppContainer
 import com.vocalarm.app.BuildConfig
 import com.vocalarm.app.R
+import com.vocalarm.app.alarm.AlarmPresentation
 import com.vocalarm.app.alarm.GuardianService
 import com.vocalarm.app.alarm.NotificationChannels
-import com.vocalarm.app.domain.AlarmTime
 import com.vocalarm.app.ui.Eyebrow
 import com.vocalarm.app.ui.NeuProgressBar
 import com.vocalarm.app.ui.StatusPill
@@ -74,7 +74,6 @@ import com.vocalarm.app.update.ApkInstaller
 import com.vocalarm.app.update.UpdateUiState
 import com.vocalarm.app.ui.vm.AboutViewModel
 import java.text.SimpleDateFormat
-import java.time.ZoneId
 import java.util.Date
 import java.util.Locale
 
@@ -263,6 +262,7 @@ private fun PermissionsCard() {
         R.string.perm_mic,
         R.string.perm_notifications,
         R.string.perm_full_screen,
+        R.string.perm_background_screen,
         R.string.perm_exact_alarm,
         R.string.perm_battery,
         R.string.perm_foreground,
@@ -329,10 +329,13 @@ private fun DiagnosticsCard(container: AppContainer) {
     var systemNext by remember { mutableLongStateOf(0L) }
     var deliveredAt by remember { mutableLongStateOf(0L) }
     var ringingAt by remember { mutableLongStateOf(0L) }
+    var screenShownAt by remember { mutableLongStateOf(0L) }
     var deliveredCount by remember { mutableIntStateOf(0) }
     var exact by remember { mutableStateOf(true) }
     var notifications by remember { mutableStateOf(true) }
     var fullScreen by remember { mutableStateOf(true) }
+    var alarmChannelEnabled by remember { mutableStateOf(true) }
+    var backgroundScreen by remember { mutableStateOf(false) }
     var batteryLimited by remember { mutableStateOf(false) }
     var guardianOn by remember { mutableStateOf(true) }
     var guardianRunning by remember { mutableStateOf(false) }
@@ -347,16 +350,15 @@ private fun DiagnosticsCard(container: AppContainer) {
         val snapshot = container.triggerLog.read()
         deliveredAt = snapshot.lastDeliveredAt
         ringingAt = snapshot.lastRingingAt
+        screenShownAt = snapshot.lastScreenShownAt
         deliveredCount = snapshot.deliveredCount
-        val now = System.currentTimeMillis()
-        appNext = container.alarmRepository.alarms.value
-            .filter { it.enabled }
-            .mapNotNull { AlarmTime.nextTriggerMillis(it, now, ZoneId.systemDefault()) }
-            .minOrNull() ?: 0L
+        appNext = container.scheduler.nextScheduledAt() ?: 0L
         systemNext = alarmManager?.nextAlarmClock?.triggerTime ?: 0L
         exact = container.scheduler.canScheduleExact()
         notifications = NotificationChannels.areNotificationsEnabled(context)
         fullScreen = NotificationChannels.canUseFullScreenIntent(context)
+        alarmChannelEnabled = NotificationChannels.canAlertForAlarm(context)
+        backgroundScreen = AlarmPresentation.canOpenFromBackground(context)
         batteryLimited = powerManager?.isIgnoringBatteryOptimizations(context.packageName) != true
         guardianOn = container.settingsRepository.settings.value.guardianEnabled
         guardianRunning = GuardianService.running
@@ -382,6 +384,11 @@ private fun DiagnosticsCard(container: AppContainer) {
                 )
             }
             Spacer(Modifier.height(10.dp))
+            DiagRow(
+                label = stringResource(R.string.diag_device),
+                value = "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}",
+                ok = null,
+            )
             DiagRow(
                 label = stringResource(R.string.diag_app_next),
                 value = if (appNext > 0L) formatStamp(appNext) else stringResource(R.string.diag_none),
@@ -412,6 +419,15 @@ private fun DiagnosticsCard(container: AppContainer) {
                 ok = null,
             )
             DiagRow(
+                label = stringResource(R.string.diag_last_screen),
+                value = if (screenShownAt > 0L) {
+                    formatStamp(screenShownAt, withSeconds = true)
+                } else {
+                    stringResource(R.string.diag_never)
+                },
+                ok = null,
+            )
+            DiagRow(
                 label = stringResource(R.string.diag_exact),
                 value = stringResource(if (exact) R.string.diag_granted else R.string.diag_denied),
                 ok = exact,
@@ -428,6 +444,16 @@ private fun DiagnosticsCard(container: AppContainer) {
                     ok = fullScreen,
                 )
             }
+            DiagRow(
+                label = stringResource(R.string.diag_alarm_channel),
+                value = stringResource(if (alarmChannelEnabled) R.string.diag_enabled else R.string.diag_disabled),
+                ok = alarmChannelEnabled,
+            )
+            DiagRow(
+                label = stringResource(R.string.diag_background_screen),
+                value = stringResource(if (backgroundScreen) R.string.diag_granted else R.string.diag_denied),
+                ok = backgroundScreen,
+            )
             DiagRow(
                 label = stringResource(R.string.diag_battery),
                 value = stringResource(
@@ -446,6 +472,45 @@ private fun DiagnosticsCard(container: AppContainer) {
                 ),
                 ok = guardianRunning,
             )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.diag_background_screen_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.textSecondary,
+            )
+            if (!backgroundScreen) {
+                Spacer(Modifier.height(8.dp))
+                NeuButton(
+                    text = stringResource(R.string.diag_background_screen_action),
+                    onClick = {
+                        openDiagnosticSettings(context, AlarmPresentation.settingsIntent(context))
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 42.dp,
+                )
+            }
+            if (!alarmChannelEnabled) {
+                Spacer(Modifier.height(8.dp))
+                NeuButton(
+                    text = stringResource(R.string.diag_alarm_channel_action),
+                    onClick = {
+                        openDiagnosticSettings(context, NotificationChannels.alarmChannelSettingsAction(context))
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 42.dp,
+                )
+            }
+            if (!fullScreen && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                Spacer(Modifier.height(8.dp))
+                NeuButton(
+                    text = stringResource(R.string.diag_full_screen_action),
+                    onClick = {
+                        openDiagnosticSettings(context, NotificationChannels.fullScreenIntentSettingsAction(context))
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 42.dp,
+                )
+            }
             Spacer(Modifier.height(8.dp))
             NeuButton(
                 text = stringResource(
@@ -496,6 +561,7 @@ private fun DiagnosticsCard(container: AppContainer) {
                         Toast.makeText(context, testMissingText, Toast.LENGTH_SHORT).show()
                     } else {
                         val scheduled = container.scheduler.scheduleTest(target.id, TEST_DELAY_MS)
+                        refresh()
                         Toast.makeText(
                             context,
                             if (scheduled) testToastText else testFailedText,
@@ -548,7 +614,11 @@ private fun formatStamp(millis: Long, withSeconds: Boolean = false): String =
         Locale.getDefault(),
     ).format(Date(millis))
 
-private const val TEST_DELAY_MS = 10_000L
+private const val TEST_DELAY_MS = 30_000L
+
+private fun openDiagnosticSettings(context: Context, intent: Intent) {
+    runCatching { context.startActivity(intent) }.onFailure { openAppSettings(context) }
+}
 
 /**
  * Requests Android's Doze exemption. Vendor auto-start and cleanup controls are separate settings.

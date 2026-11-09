@@ -40,7 +40,26 @@ class AlarmRingActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        AlarmService.screenShown(this)
+        confirmScreenVisible()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) confirmScreenVisible()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        confirmScreenVisible()
+    }
+
+    private fun confirmScreenVisible() {
+        val container = (application as VocalarmApp).container
+        if (window.decorView.hasWindowFocus() && container.ringing.current.value != null) {
+            container.triggerLog.recordScreenShown()
+            AlarmService.screenShown(this)
+        }
     }
 
     @Suppress("DEPRECATION")

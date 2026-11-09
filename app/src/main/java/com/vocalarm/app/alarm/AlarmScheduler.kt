@@ -35,6 +35,15 @@ class AlarmScheduler(
             true
         }
 
+    /** Includes pending snoozes and tests, even when their one-shot definition is disabled. */
+    fun nextScheduledAt(): Long? = scheduleStore.pending()
+        .filter { occurrence ->
+            repository.find(occurrence.alarmId)?.let { alarm ->
+                alarm.enabled || occurrence.kind != AlarmOccurrenceKind.Regular
+            } == true
+        }
+        .minOfOrNull { it.triggerAtMillis }
+
     fun schedule(alarm: Alarm): Boolean {
         if (!repository.flush()) return false
         return safely { scheduleRegular(alarm) }
@@ -60,8 +69,8 @@ class AlarmScheduler(
     }
 
     /**
-     * Fires a one-off test ring through the real alarm pipeline (system alarm -> receiver ->
-     * service -> full-screen notification) without touching the alarm's own schedule.
+     * Fires a one-off test ring through the real system alarm -> foreground service -> full-screen
+     * notification pipeline without touching the alarm's own schedule.
      */
     fun scheduleTest(alarmId: String, delayMillis: Long): Boolean {
         if (!repository.flush()) return false
@@ -87,6 +96,7 @@ class AlarmScheduler(
         alarms.forEach { alarm ->
             cancelLegacyPending(alarm.id)
             AlarmOccurrenceKind.entries.forEach { kind ->
+                cancelBroadcastPending(alarm.id, kind)
                 if (restored.pending.none { it.alarmId == alarm.id && it.kind == kind }) {
                     cancelPending(alarm.id, kind)
                 }
@@ -96,7 +106,7 @@ class AlarmScheduler(
         restored.pending.forEach(::setAlarm)
     }
 
-    /** Claim each persisted occurrence once before starting the ringing service. */
+    /** The delivered service claims each persisted occurrence once before starting playback. */
     fun consume(alarmId: String, kind: AlarmOccurrenceKind, token: String): Boolean {
         val alarm = repository.find(alarmId) ?: return false
         if (kind == AlarmOccurrenceKind.Regular && !alarm.enabled) return false
@@ -131,6 +141,7 @@ class AlarmScheduler(
     private fun register(occurrence: AlarmOccurrence) {
         scheduleStore.put(occurrence)
         cancelLegacyPending(occurrence.alarmId)
+        cancelBroadcastPending(occurrence.alarmId, occurrence.kind)
         setAlarm(occurrence)
     }
 
@@ -138,7 +149,14 @@ class AlarmScheduler(
         runCatching(block).onFailure(repository::reportSchedulingFailure).isSuccess
 
     private fun setAlarm(occurrence: AlarmOccurrence) {
-        val pending = pendingIntent(occurrence.alarmId, occurrence.kind, occurrence.token)
+        // Let AlarmManager start the foreground service itself, including after process death.
+        // A receiver must not consume the alarm before Android accepts the service handoff.
+        val pending = PendingIntent.getForegroundService(
+            context,
+            0,
+            AlarmDelivery(occurrence.alarmId, occurrence.kind, occurrence.token).serviceIntent(context),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
         val exact = canScheduleExact()
         val showIntent = PendingIntent.getActivity(
             context,
@@ -153,7 +171,8 @@ class AlarmScheduler(
                     pending,
                 )
             }.recoverCatching {
-                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, occurrence.triggerAtMillis, pending)
+                // Preserve exact delivery if a ROM refuses setAlarmClock.
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, occurrence.triggerAtMillis, pending)
             }.getOrThrow()
         } else {
             alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, occurrence.triggerAtMillis, pending)
@@ -161,17 +180,25 @@ class AlarmScheduler(
     }
 
     private fun cancelPending(alarmId: String, kind: AlarmOccurrenceKind) {
-        alarmManager.cancel(pendingIntent(alarmId, kind))
-    }
-
-    private fun pendingIntent(alarmId: String, kind: AlarmOccurrenceKind, token: String? = null): PendingIntent {
-        val intent = AlarmReceiver.createIntent(context, alarmId, kind, token)
-        return PendingIntent.getBroadcast(
+        // Looking up a token must never update its extras: an in-flight delivery may still read it.
+        val pending = PendingIntent.getForegroundService(
             context,
             0,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            AlarmDelivery.serviceIntent(context, alarmId, kind),
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
         )
+        if (pending != null) alarmManager.cancel(pending)
+        cancelBroadcastPending(alarmId, kind)
+    }
+
+    private fun cancelBroadcastPending(alarmId: String, kind: AlarmOccurrenceKind) {
+        val pending = PendingIntent.getBroadcast(
+            context,
+            0,
+            AlarmReceiver.createIntent(context, alarmId, kind, null),
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+        )
+        if (pending != null) alarmManager.cancel(pending)
     }
 
     /** Replace registrations made before occurrence tokens and unique intent URIs were introduced. */

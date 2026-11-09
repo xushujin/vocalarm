@@ -26,6 +26,8 @@ class AlarmScheduleStore(private val store: JsonStore) {
     fun find(alarmId: String, kind: AlarmOccurrenceKind): AlarmOccurrence? =
         occurrences.firstOrNull { it.alarmId == alarmId && it.kind == kind }
 
+    fun pending(): List<AlarmOccurrence> = occurrences.filterNot { it.consumed }
+
     fun put(occurrence: AlarmOccurrence) {
         replace(occurrences.filterNot { it.alarmId == occurrence.alarmId && it.kind == occurrence.kind } + occurrence)
     }

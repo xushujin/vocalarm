@@ -30,6 +30,20 @@ class AlarmScheduleStoreTest {
     private fun store(): AlarmScheduleStore = AlarmScheduleStore(JsonStore(file()))
 
     @Test
+    fun diagnosticNextReminderIncludesTestAndSnoozeAfterRestart() {
+        val schedule = store()
+        val regular = AlarmOccurrence(alarm.id, AlarmOccurrenceKind.Regular, deadline)
+        val snooze = AlarmOccurrence(alarm.id, AlarmOccurrenceKind.Snooze, at(7, 5))
+        val test = AlarmOccurrence(alarm.id, AlarmOccurrenceKind.Test, at(7, 1))
+        listOf(regular, snooze, test).forEach(schedule::put)
+        schedule.consume(alarm.id, regular.kind, regular.token, deadline)
+
+        val pending = store().pending()
+        assertEquals(setOf(snooze, test), pending.toSet())
+        assertEquals(test.triggerAtMillis, pending.minOf { it.triggerAtMillis })
+    }
+
+    @Test
     fun coldStartRestoresOriginalDeadlineAndDeliveryToken() {
         val occurrence = AlarmOccurrence(alarm.id, AlarmOccurrenceKind.Regular, deadline)
         store().put(occurrence)

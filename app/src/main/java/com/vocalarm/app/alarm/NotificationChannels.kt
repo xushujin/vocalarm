@@ -75,6 +75,17 @@ object NotificationChannels {
         return manager.areNotificationsEnabled()
     }
 
+    fun canAlertForAlarm(context: Context): Boolean {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return false
+        val channel = manager.getNotificationChannel(ALARM) ?: return false
+        return manager.areNotificationsEnabled() && channel.importance >= NotificationManager.IMPORTANCE_HIGH
+    }
+
+    fun alarmChannelSettingsAction(context: Context): Intent =
+        Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            .putExtra(Settings.EXTRA_CHANNEL_ID, ALARM)
+
     fun notificationSettingsAction(context: Context): android.content.Intent =
         android.content.Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
             .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
@@ -87,8 +98,8 @@ object NotificationChannels {
      */
     fun canUseFullScreenIntent(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return true
-        val manager = context.getSystemService(NotificationManager::class.java) ?: return true
-        return runCatching { manager.canUseFullScreenIntent() }.getOrDefault(true)
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return false
+        return runCatching { manager.canUseFullScreenIntent() }.getOrDefault(false)
     }
 
     /** Opens the special app access page where full-screen intents are granted or revoked. */

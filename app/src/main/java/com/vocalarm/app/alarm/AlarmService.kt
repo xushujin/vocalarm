@@ -18,8 +18,8 @@ import androidx.core.content.ContextCompat
 import com.vocalarm.app.AppContainer
 import com.vocalarm.app.R
 import com.vocalarm.app.VocalarmApp
+import com.vocalarm.app.data.AlarmOccurrenceKind
 import com.vocalarm.app.domain.Alarm
-import com.vocalarm.app.ui.ring.AlarmRingActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -53,26 +53,28 @@ class AlarmService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
         when (action) {
-            ACTION_START -> {
-                val alarmId = intent.getStringExtra(EXTRA_ALARM_ID)
-                if (alarmId.isNullOrBlank()) {
+            AlarmDelivery.ACTION_DELIVER -> {
+                container.triggerLog.recordDelivered()
+                val delivery = AlarmDelivery.from(intent)
+                val accepted = delivery != null && container.scheduler.consume(
+                    delivery.alarmId, delivery.kind, delivery.token,
+                )
+                if (accepted) {
+                    begin(delivery.alarmId, delivery.kind != AlarmOccurrenceKind.Regular)
+                } else if (activeAlarm == null) {
+                    // Even a stale system delivery starts an FGS; meet its five-second contract.
                     startForegroundCompat(buildPreparingNotification())
                     stopRinging()
-                } else {
-                    // Never post the "preparing" placeholder on this path: a second notification
-                    // right before the full-screen one lets the system mute the alarm as
-                    // "recently noisy" and drop the full-screen launch with it.
-                    begin(alarmId, intent.getBooleanExtra(EXTRA_SNOOZE, false))
                 }
             }
 
             ACTION_STOP -> {
-                startForegroundCompat(buildPreparingNotification())
+                if (activeAlarm == null) startForegroundCompat(buildPreparingNotification())
                 stopRinging()
             }
 
             ACTION_SNOOZE -> {
-                startForegroundCompat(buildPreparingNotification())
+                if (activeAlarm == null) startForegroundCompat(buildPreparingNotification())
                 snooze(
                     minutes = intent.getIntExtra(EXTRA_MINUTES, 5),
                     requestedAlarmId = intent.getStringExtra(EXTRA_ALARM_ID),
@@ -83,9 +85,11 @@ class AlarmService : Service() {
                 val alarm = activeAlarm
                 if (alarm == null) {
                     stopSelf()
-                } else {
+                } else if (!ringScreenShown) {
                     ringScreenShown = true
-                    cancelFullScreenNotification()
+                    fullScreenVisible = false
+                    getSystemService(android.app.NotificationManager::class.java)
+                        ?.notify(NOTIFICATION_ID, buildRingingNotification(alarm, showFullScreen = false))
                     // The ringing activity keeps the display on by itself from now on.
                     releaseScreenWakeLock()
                 }
@@ -117,28 +121,33 @@ class AlarmService : Service() {
             stopRinging()
             return
         }
+        // Two alarms may arrive together. Stop the previous playback before replacing its session.
+        ringJob?.cancel()
+        container.playback.stop()
+        container.tts.stop()
+        vibrator?.cancel()
+        releaseWakeLock()
         activeAlarm = alarm
         ringScreenShown = false
         container.ringing.start(alarm, isSnooze)
         container.triggerLog.recordRinging()
 
-        // The receiver already consumed this occurrence and scheduled the following repeat before
-        // starting the service. Playback must not cancel a separate snooze or diagnostic test.
+        // Consumption happens here, after Android has actually delivered the foreground service.
 
         // Post the full-screen intent before touching the display. Android only expands one while
         // the screen is off or the keyguard is up; lighting the screen first would make the system
         // treat this as an in-use device and demote our own alarm to a heads-up banner.
-        postFullScreenNotification(alarm)
+        fullScreenVisible = true
+        startForegroundCompat(buildRingingNotification(alarm))
         if (!fullScreenIntentUsable()) {
             // Notifications blocked or the full-screen permission revoked: the system will never
             // expand the intent, so waking the display ourselves is the only thing left to do.
             wakeScreen()
         }
-        startForegroundCompat(buildOngoingNotification(alarm))
-        launchRingScreen(alarm)
+        AlarmPresentation.open(this, alarm.id)
         acquireWakeLock()
         ringJob = scope.launch { playUntilFinished(alarm) }
-        watchRingScreenLaunch()
+        watchRingScreenLaunch(alarm.id)
     }
 
     /**
@@ -146,10 +155,13 @@ class AlarmService : Service() {
      * has not reported itself after a short grace period and the display is dark, wake it so the
      * user at least hears and sees the alarm.
      */
-    private fun watchRingScreenLaunch() {
+    private fun watchRingScreenLaunch(alarmId: String) {
         scope.launch {
             delay(RING_SCREEN_GRACE_MS)
-            if (ringScreenShown) return@launch
+            if (ringScreenShown || activeAlarm?.id != alarmId) return@launch
+            if (AlarmPresentation.canOpenFromBackground(this@AlarmService)) {
+                AlarmPresentation.open(this@AlarmService, alarmId)
+            }
             val powerManager = getSystemService(PowerManager::class.java) ?: return@launch
             if (!powerManager.isInteractive) wakeScreen()
         }
@@ -157,7 +169,7 @@ class AlarmService : Service() {
 
     /** Full-screen intents need both notifications and the Android 14+ special access grant. */
     private fun fullScreenIntentUsable(): Boolean =
-        NotificationChannels.areNotificationsEnabled(this) &&
+        NotificationChannels.canAlertForAlarm(this) &&
             NotificationChannels.canUseFullScreenIntent(this)
 
     private suspend fun playUntilFinished(alarm: Alarm) {
@@ -214,18 +226,9 @@ class AlarmService : Service() {
         vibrator?.cancel()
         vibrator = null
         activeAlarm = null
-        cancelFullScreenNotification()
+        fullScreenVisible = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
-    }
-
-    private fun launchRingScreen(alarm: Alarm) {
-        val intent = AlarmRingActivity.createIntent(this, alarm.id).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        }
-        // On Android 10+ this can be blocked while in the background; the full-screen intent in the
-        // notification is the guaranteed path, this call only makes it instant when allowed.
-        runCatching { startActivity(intent) }
     }
 
     private fun acquireWakeLock() {
@@ -280,23 +283,7 @@ class AlarmService : Service() {
 
     private fun updateNotification(alarm: Alarm, message: String) {
         val manager = getSystemService(android.app.NotificationManager::class.java) ?: return
-        manager.notify(NOTIFICATION_ID, buildOngoingNotification(alarm, message))
-        if (fullScreenVisible) {
-            manager.notify(FULLSCREEN_NOTIFICATION_ID, buildFullScreenNotification(alarm, message))
-        }
-    }
-
-    private fun postFullScreenNotification(alarm: Alarm) {
-        val manager = getSystemService(android.app.NotificationManager::class.java) ?: return
-        manager.notify(FULLSCREEN_NOTIFICATION_ID, buildFullScreenNotification(alarm))
-        fullScreenVisible = true
-    }
-
-    private fun cancelFullScreenNotification() {
-        if (!fullScreenVisible) return
-        getSystemService(android.app.NotificationManager::class.java)
-            ?.cancel(FULLSCREEN_NOTIFICATION_ID)
-        fullScreenVisible = false
+        manager.notify(NOTIFICATION_ID, buildRingingNotification(alarm, message, fullScreenVisible))
     }
 
     private fun postSnoozedNotification(minutes: Int) {
@@ -319,13 +306,12 @@ class AlarmService : Service() {
             .setOnlyAlertOnce(true)
             .build()
 
-    private fun buildFullScreenNotification(alarm: Alarm, message: String? = null): Notification {
-        val fullScreen = PendingIntent.getActivity(
-            this,
-            REQUEST_RING_SCREEN,
-            AlarmRingActivity.createIntent(this, alarm.id),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+    private fun buildRingingNotification(
+        alarm: Alarm,
+        message: String? = null,
+        showFullScreen: Boolean = true,
+    ): Notification {
+        val fullScreen = AlarmPresentation.pendingIntent(this, alarm.id)
         val actionIcon = Icon.createWithResource(this, R.drawable.ic_stat_alarm)
         val title = alarm.label.ifBlank { getString(R.string.notification_alarm_title) }
         val text = message ?: buildString {
@@ -348,34 +334,13 @@ class AlarmService : Service() {
             .setOngoing(true)
             .setAutoCancel(false)
             .setShowWhen(false)
-            .setFullScreenIntent(fullScreen, true)
+            .setOnlyAlertOnce(true)
             .setContentIntent(fullScreen)
+        if (showFullScreen) builder.setFullScreenIntent(fullScreen, true)
         notificationActions(alarm, actionIcon).forEach(builder::addAction)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
         }
-        return builder.build()
-    }
-
-    private fun buildOngoingNotification(alarm: Alarm, message: String? = null): Notification {
-        val content = PendingIntent.getActivity(
-            this,
-            REQUEST_RING_SCREEN,
-            AlarmRingActivity.createIntent(this, alarm.id),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val icon = Icon.createWithResource(this, R.drawable.ic_stat_alarm)
-        val builder = Notification.Builder(this, NotificationChannels.ALARM_ONGOING)
-            .setSmallIcon(R.drawable.ic_stat_alarm)
-            .setContentTitle(alarm.label.ifBlank { getString(R.string.notification_ongoing_title) })
-            .setContentText(message ?: getString(R.string.notification_ongoing_text, alarm.timeText))
-            .setCategory(Notification.CATEGORY_ALARM)
-            .setVisibility(Notification.VISIBILITY_PUBLIC)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setShowWhen(false)
-            .setContentIntent(content)
-        notificationActions(alarm, icon).forEach(builder::addAction)
         return builder.build()
     }
 
@@ -420,18 +385,14 @@ class AlarmService : Service() {
     }
 
     companion object {
-        const val ACTION_START = "com.vocalarm.app.action.START_RINGING"
         const val ACTION_STOP = "com.vocalarm.app.action.STOP_RINGING"
         const val ACTION_SNOOZE = "com.vocalarm.app.action.SNOOZE_RINGING"
         const val ACTION_SCREEN_SHOWN = "com.vocalarm.app.action.RING_SCREEN_SHOWN"
         const val EXTRA_ALARM_ID = "extra_alarm_id"
-        const val EXTRA_SNOOZE = "extra_snooze"
         const val EXTRA_MINUTES = "extra_minutes"
 
         private const val NOTIFICATION_ID = 1001
         private const val SNOOZE_NOTIFICATION_ID = 1002
-        private const val FULLSCREEN_NOTIFICATION_ID = 1004
-        private const val REQUEST_RING_SCREEN = 11
         private const val REQUEST_STOP = 12
         private const val REQUEST_SNOOZE_BASE = 20
         private const val WAKE_LOCK_TAG = "Vocalarm:Ringing"
@@ -440,14 +401,6 @@ class AlarmService : Service() {
         private const val RING_SCREEN_GRACE_MS = 3_000L
         private const val MAX_RING_MS = 30 * 60 * 1000L
         private const val FAILED_RING_MS = 60 * 1000L
-
-        fun start(context: Context, alarmId: String, snooze: Boolean) {
-            val intent = Intent(context, AlarmService::class.java)
-                .setAction(ACTION_START)
-                .putExtra(EXTRA_ALARM_ID, alarmId)
-                .putExtra(EXTRA_SNOOZE, snooze)
-            ContextCompat.startForegroundService(context, intent)
-        }
 
         fun stop(context: Context) {
             val intent = Intent(context, AlarmService::class.java).setAction(ACTION_STOP)

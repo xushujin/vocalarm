@@ -27,7 +27,7 @@
 | 11 | 自定义音量 + 渐强 | `domain/LoopPolicy.kt#FadeGain`、`AudioPlayer`、`AlarmService` | MediaPlayer 实时增益；TTS 通过音量参数，是否生效取决于引擎 |
 | 12 | 闹钟增删改启停 | `data/AlarmRepository.kt`、`ui/screens/AlarmListScreen.kt` | 列表开关、编辑页删除 |
 | 13 | 先录音再文字语音 | `alarm/AlarmPlaybackEngine.kt` | 每轮顺序：录音 → 语音；两者可只配其一 |
-| 14 | 锁屏 / 后台正常触发 | `alarm/AlarmScheduler.kt`、`AlarmService.kt`、`AlarmReceiver.kt`、`BootReceiver.kt`、`GuardianService.kt`、`AlarmWatchdog.kt` | `setAlarmClock` + 前台服务 + 全屏通知（优先）＋ 兜底亮屏 + CPU/屏幕唤醒锁 + 开机恢复 + 后台守护服务 + 周期恢复任务（最小间隔 15 分钟，实际执行由系统决定） |
+| 14 | 锁屏 / 后台触发 | `alarm/AlarmScheduler.kt`、`AlarmService.kt`、`AlarmPresentation.kt`、`BootReceiver.kt`、`GuardianService.kt`、`AlarmWatchdog.kt` | `setAlarmClock` 直接投递前台服务 + 全屏闹钟通知 + 可选后台弹出授权 + CPU/屏幕唤醒锁 + 开机恢复 + 可选后台守护及周期恢复任务 |
 | 15 | 本地存储、无需账号 | `data/JsonStore.kt`、`AlarmRepository.kt`、`SettingsRepository.kt`、`RecordingStore.kt` | 原子写 JSON + 本地 m4a；无网络账号 |
 
 界面：全部组件自绘（双阴影拟态、自绘图标、滚轮、开关、滑杆、输入框），只有 Compose 官方 `foundation` / `material3` 的文本与主题骨架，没有第三方 UI 库或 DI 框架。应用图标与页内标识共用「柔光表盘 + V 形指针」语言，自适应图标、单色图标与 Android 12 启动屏保持一致。
@@ -246,6 +246,7 @@ base64 -w0 vocalarm-release.jks
 | `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | 锁屏/后台响铃 |
 | `FOREGROUND_SERVICE_DATA_SYNC` | 后台下载更新 |
 | `USE_FULL_SCREEN_INTENT` | 锁屏全屏响铃。Android 14+ 属于「特殊应用权限 → 全屏通知」，被系统或厂商关闭时系统会把闹钟降级成通知横幅，首页会给出提示并可直接跳到该设置页 |
+| `SYSTEM_ALERT_WINDOW`（可选） | 亮屏使用其他应用时允许打开到点响铃页；关于 → 闹钟自检提供「显示在其他应用上层／悬浮窗」授权入口，不绘制悬浮窗 |
 | `WAKE_LOCK` | 响铃期间保持 CPU，并点亮/保持屏幕 |
 | `RECEIVE_BOOT_COMPLETED` | 重启、改时间、改时区后恢复闹钟 |
 | `VIBRATE` | 音频失败时的震动兜底 |
@@ -256,7 +257,9 @@ base64 -w0 vocalarm-release.jks
 
 `USE_FULL_SCREEN_INTENT` 在 Android 14（API 34）及以上是一个可被用户关闭的特殊权限：关闭后 `setFullScreenIntent` 不会启动响铃页，只留下一条横幅。应用启动/回到前台时用 `NotificationManager.canUseFullScreenIntent()` 读取真实状态，未开启时在首页顶部显示「全屏提醒未开启」提示条，点击跳转 `ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT`。
 
-响铃时的顺序至关重要：**先发全屏通知，再按需点亮屏幕**。系统只在屏幕熄灭或锁屏时才展开全屏 Intent；如果应用先把屏幕点亮，系统会判定设备正在使用中，转而下发一条横幅。因此 `AlarmService` 只在两种情况下自己点亮屏幕——通知权限被关闭、或全屏通知权限未授予——并在全屏通知发出 3 秒后仍未见响铃页、且屏幕仍处于熄灭状态时兜底点亮，避免个别 ROM 静默丢弃全屏 Intent 后毫无反应。
+响铃时先以高重要性闹钟通知启动前台服务，通知本身携带全屏 Intent，再按需点亮屏幕。它不再与另一条低重要性响铃服务通知并存。通知权限、闹钟通知类别的重要性以及全屏权限均参与自检，页面取得窗口焦点后才记录「最近显示全屏提醒」。Android 15+ 的响铃页面 PendingIntent 显式配置创建者后台启动选项；该选项本身不会授予后台启动权限。
+
+手机已解锁且正在使用其他应用时，系统可能只显示横幅。若需要直接打开响铃页，可在关于 → 闹钟自检选择「允许后台弹出提醒页面」，手动授予「显示在其他应用上层／悬浮窗」权限。应用只在到点响铃期间使用该后台 Activity 启动豁免，不创建悬浮窗。ColorOS 等系统可能还要求单独允许「后台弹出界面」。未授权时保留锁屏全屏通知和可点击的响铃通知。相关平台规则见 [Android 后台 Activity 启动限制](https://developer.android.com/guide/components/activities/background-starts)。
 
 文字转语音通过系统 `TextToSpeech` 完成，因此需要两件事同时成立：
 
@@ -267,7 +270,30 @@ base64 -w0 vocalarm-release.jks
 
 ## 9. 测试与验证记录
 
-本次 `v1.0.10` 的调度修复已在 Linux（JDK 25、SDK Platform 37、Build-Tools 36.0.0）运行 `testDebugUnitTest` 与 `assembleDebug`：**82 个测试通过，0 失败，Debug APK 编译成功**。随后 `lintDebug` 通过（0 error、1 warning，仅提示 AGP 9.5.1 可升级）。其中新增 21 个测试覆盖触发时间持久化、冷启动、稍后提醒、消费去重、提前/过期投递、删除落盘及写入失败。验证时用临时 Maven 镜像绕过下载超时，项目依赖版本未变。此结果不等同于 Android 设备上的实际响铃验证。
+本次改动使用系统持有的 `PendingIntent.getForegroundService` 直接启动 `AlarmService`，避免先消费广播再启动服务的中间环节；查找待取消的 PendingIntent 使用 `FLAG_NO_CREATE`，避免把在途投递中的令牌改为 null。JVM 回归测试新增日志升级、全屏显示证据与试响/稍后提醒自检覆盖。
+
+2026-11-09 本次验证：**86 个单元测试通过，Debug / Release 构建成功，Release Lint 为 0 error、2 warning（均为构建工具可升级提示）**。Android 16 / API 36 模拟器上关闭守护、移除任务并结束进程后，四项真实系统投递测试均取得全屏窗口焦点：
+
+| 场景 | 服务收到闹钟相对预定时间 | 全屏取得焦点相对预定时间 |
+|------|------------------------|--------------------------|
+| 锁屏普通一次性闹钟 | +1.884 秒 | +4.827 秒 |
+| 锁屏、普通闹钟已关闭的稍后提醒 | +1.572 秒 | +4.051 秒 |
+| 锁屏试响 | +1.783 秒 | +4.810 秒 |
+| 亮屏使用系统设置、已授权后台弹出 | +1.791 秒 | +4.217 秒 |
+
+这些时间包含模拟器进程冷启动和页面绘制，不代表真机时延承诺。系统日志确认前台服务由 `ALARM_MANAGER_ALARM_CLOCK` 放行，亮屏页面由 `BAL_ALLOW_SAW_PERMISSION` 放行；锁屏路径使用系统发送的全屏 Intent。录音播放产生了 AudioTrack 帧，但模拟器使用 `-no-audio`，不作为真机扬声器出声的证明。正式包 `1.0.11` / `10011` 已通过 APK 签名校验，证书与 GitHub 已发布 `1.0.10` 相同，并在模拟器完成 `1.0.10 → 1.0.11` 覆盖安装与启动检查。本地安装包位于 `app/build/outputs/apk/release/vocalarm-1.0.11.apk`。
+
+设备验证脚本 `scripts/verify_alarm_delivery.py` 使用已安装调试版的临时 API 34+ 模拟器：写入测试闹钟，关闭守护，上滑移除任务并确认进程结束，然后等待真实系统闹钟。锁屏场景关闭悬浮窗授权，亮屏场景授权后停留在系统设置页。脚本检查新进程、到点投递时间、响铃处理与窗口焦点，并将截图、系统日志、音频轨道和通知记录保存到 `app/build/alarm-verification/`。它仅允许 `emulator-*` 设备，会替换该模拟器上调试版的测试数据。
+
+```bash
+./gradlew testDebugUnitTest assembleDebug lintDebug
+adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk
+python3 scripts/verify_alarm_delivery.py --serial emulator-5554 --scenario locked --kind Regular
+python3 scripts/verify_alarm_delivery.py --serial emulator-5554 --scenario locked --kind Snooze
+python3 scripts/verify_alarm_delivery.py --serial emulator-5554 --scenario unlocked --kind Test
+```
+
+此前 `v1.0.10` 已在 Linux（JDK 25、SDK Platform 37、Build-Tools 36.0.0）通过 82 个单元测试、Debug 构建和 Lint；这些历史检查不能代表本次设备验证。
 
 ColorOS 17 仍需真机验证：开启自启动/后台活动并核对电池策略后，在关于页安排试响，上滑清理并锁屏，先观察是否自行响铃，再打开自检查看时间；另测一次性闹钟响铃后选择稍后提醒、再次上滑清理，等待提醒。需分别验证单独上滑、一键清理与长时间锁屏。强行停止后必须手动重新打开应用，不能作为普通后台保活测试。
 
@@ -325,11 +351,11 @@ ColorOS 17 仍需真机验证：开启自启动/后台活动并核对电池策�
 
 ## 10. 已知限制与设计取舍
 
-- **屏幕亮着时的全屏**：Android 10 起禁止后台启动 Activity，全屏闹钟只能由「全屏 Intent」拉起；而系统只在屏幕熄灭或锁屏时展开全屏 Intent，屏幕亮着且已解锁时按设计只显示带操作按钮的横幅。系统自带时钟是特权应用，第三方应用无法完全复刻这一行为。Vocalarm 的处理：**先发全屏通知、不主动碰屏幕**，由系统点亮屏幕并全屏响铃；正在使用手机时给出带「停止 / 稍后 5 分钟 / 稍后 10 分钟」的横幅，点按即可进入响铃页，声音与震动不依赖屏幕是否点亮。只有全屏通知不可用（通知被关或权限被撤销）时才由应用自己点亮屏幕，3 秒兜底逻辑则用于个别静默丢弃全屏 Intent 的 ROM。
+- **屏幕亮着时的全屏**：Android 通常将全屏通知显示为横幅；后台弹出页面需用户授予可选的「显示在其他应用上层／悬浮窗」权限，厂商还可能另有开关。未授权时仍可点通知打开响铃页，音频独立于页面。锁屏时优先由全屏通知显示页面，3 秒后仍未显示且屏幕熄灭才兜底亮屏。
 - **「强行停止」会撤销闹钟**：系统设置里的「强行停止」会让应用进入 stopped 状态，第三方应用不能自行解除。部分厂商清理策略也会阻止后台唤起。重新打开应用后才有机会恢复调度；已错过超过 30 分钟的一次性闹钟会关闭，不会改成次日响铃。
-- **「最近任务上滑」后的恢复**：普通 Android 任务移除不要求闹钟进程常驻，`AlarmManager.setAlarmClock` 可在到点时启动接收器。可选的 `GuardianService`（`stopWithTask=false`、`START_STICKY`）与最小周期 15 分钟的持久化 JobScheduler 任务，只能在系统允许时帮助恢复调度，不能绕过厂商清理、自启动限制或强行停止；系统也不保证 15 分钟内一定执行任务。
-- **持久化每次触发**：`alarm-schedules.json` 分别保存普通闹钟、稍后提醒、试响的具体时间与唯一令牌。进程启动、任务移除和周期维护都重新登记原时间；到点后 30 分钟内恢复时允许补响，避免直接跳到明天。接收器先持久化消费状态，再启动响铃；重复投递不会再次响铃。一次性闹钟关闭后，其稍后提醒仍可恢复，试响也不会覆盖稍后提醒。更改系统时间/时区时才重新计算普通闹钟的本地时间。
-- **闹钟自检**：关于页显示应用内下一个普通闹钟、设备所有应用中最早的系统闹钟、最近收到广播/启动响铃处理的时间，以及权限与后台守护状态。`AlarmManager.getNextAlarmClock()` 是设备级查询，不能用它证明 Vocalarm 已登记。`trigger.log` 的投递时间表示广播到达，启动时间表示服务开始处理，均不证明音频实际出声。面板提供独立的「10 秒后试响一次」，用于清理后台、锁屏后的验证。
+- **「最近任务上滑」后的恢复**：普通 Android 任务移除不要求闹钟进程常驻，`AlarmManager.setAlarmClock` 直接投递到前台响铃服务。响铃服务声明 `stopWithTask=false`。可选的守护服务和最小周期 15 分钟的持久化 JobScheduler 任务只能在系统允许时帮助恢复调度，不能绕过厂商清理、自启动限制或强行停止；系统也不保证 15 分钟内一定执行任务。
+- **持久化每次触发**：`alarm-schedules.json` 分别保存普通闹钟、稍后提醒、试响的具体时间与唯一令牌。进程启动、任务移除和周期维护都重新登记原时间；到点后 30 分钟内恢复时允许补响，避免直接跳到明天。系统启动响铃服务后才消费令牌；重复投递不会再次响铃。一次性闹钟关闭后，其稍后提醒仍可恢复，试响也不会覆盖稍后提醒。更改系统时间/时区时才重新计算普通闹钟的本地时间。
+- **闹钟自检**：关于页显示已保存的下次提醒（包括稍后提醒、试响）、设备所有应用中最早的系统闹钟、最近投递/响铃处理/全屏页面取得焦点的时间，以及通知类别、权限与守护状态。保存的计划和设备级 `getNextAlarmClock()` 均不能单独证明该应用仍持有系统登记。投递/响铃记录也不证明音频实际出声。独立的「30 秒后试响一次」为上滑清理、锁屏留出时间；测试时应先等待自行触发，再打开应用查看记录。
 - **全屏通知权限**：Android 14+ 的「全屏通知」默认只授予通话与闹钟类应用，部分厂商 ROM 对侧载应用默认关闭。关闭后系统会静默降级成横幅；首页顶部会显示提示条，点击可直达该设置页。
 - **ColorOS 17**：在系统应用设置中检查 Vocalarm 的自启动、后台活动和电池策略，允许自启动及后台活动，并解除电池限制；最近任务锁定可减少误清理。菜单名称随机型/版本变化，应用不能检测或代替用户开启这些厂商开关。Android 电池优化豁免不等于 ColorOS 后台放行。第三方应用不能承诺与预装系统时钟具有相同的清理豁免。关于页提供应用设置入口与操作提示。
 - **其他厂商 ROM 的额外开关**：小米 / 红米需要在「应用设置 → 权限管理」中允许「后台弹出界面」与「锁屏显示」；华为 / 荣耀需要在「应用启动管理」中允许自启动与后台活动。这些开关没有公开 API，应用无法自行检测或跳转。
