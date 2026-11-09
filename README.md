@@ -270,9 +270,18 @@ base64 -w0 vocalarm-release.jks
 
 ## 9. 测试与验证记录
 
-本次改动使用系统持有的 `PendingIntent.getForegroundService` 直接启动 `AlarmService`，避免先消费广播再启动服务的中间环节；查找待取消的 PendingIntent 使用 `FLAG_NO_CREATE`，避免把在途投递中的令牌改为 null。JVM 回归测试新增日志升级、全屏显示证据与试响/稍后提醒自检覆盖。
+`1.0.12` 修复时间选择器相互覆盖：滚轮的长生命周期收集器读取最新回调，小时和分钟通过各自的原子更新方法修改草稿。Android 16 模拟器上先复现旧版 `07:15 → 09:15 → 07:16` 的小时回退，再用同一脚本确认修复后交替滑动、反向滑动、快速切换两列、保存并重新打开均保留正确时间；同时核对滚轮中央数字、编辑页时间和持久化 JSON。86 个单元测试、Debug / Release 构建与 Release Lint 均通过，Lint 仅有 2 个构建工具升级提示。
 
-2026-11-09 本次验证：**86 个单元测试通过，Debug / Release 构建成功，Release Lint 为 0 error、2 warning（均为构建工具可升级提示）**。Android 16 / API 36 模拟器上关闭守护、移除任务并结束进程后，四项真实系统投递测试均取得全屏窗口焦点：
+回归脚本 `scripts/verify_time_wheel.py` 仅允许临时模拟器，会替换模拟器调试版的闹钟/设置测试数据；界面快照和前后值保存到 `app/build/time-wheel-verification/`：
+
+```bash
+adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk
+python3 scripts/verify_time_wheel.py --serial emulator-5554
+```
+
+`1.0.11` 使用系统持有的 `PendingIntent.getForegroundService` 直接启动 `AlarmService`，避免先消费广播再启动服务的中间环节；查找待取消的 PendingIntent 使用 `FLAG_NO_CREATE`，避免把在途投递中的令牌改为 null。JVM 回归测试新增日志升级、全屏显示证据与试响/稍后提醒自检覆盖。
+
+2026-11-09 的 `1.0.11` 验证：**86 个单元测试通过，Debug / Release 构建成功，Release Lint 为 0 error、2 warning（均为构建工具可升级提示）**。Android 16 / API 36 模拟器上关闭守护、移除任务并结束进程后，四项真实系统投递测试均取得全屏窗口焦点：
 
 | 场景 | 服务收到闹钟相对预定时间 | 全屏取得焦点相对预定时间 |
 |------|------------------------|--------------------------|

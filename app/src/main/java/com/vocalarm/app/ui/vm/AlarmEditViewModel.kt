@@ -129,8 +129,12 @@ class AlarmEditViewModel(
         )
     }
 
-    fun setTime(hour: Int, minute: Int) {
-        _draft.update { it.copy(hour = hour.coerceIn(0, 23), minute = minute.coerceIn(0, 59)) }
+    fun setHour(hour: Int) {
+        _draft.update { it.copy(hour = hour.coerceIn(0, 23)) }
+    }
+
+    fun setMinute(minute: Int) {
+        _draft.update { it.copy(minute = minute.coerceIn(0, 59)) }
     }
 
     fun setLabel(label: String) {

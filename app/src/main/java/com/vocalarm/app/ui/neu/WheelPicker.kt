@@ -54,6 +54,8 @@ fun WheelPicker(
     val palette = LocalPalette.current
     val state = rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex)
     val currentSelected by rememberUpdatedState(selectedIndex)
+    // The collector lives as long as the wheel. Its callback can change on every recomposition.
+    val currentOnSelected by rememberUpdatedState(onSelected)
     val fling = rememberSnapFlingBehavior(lazyListState = state)
     val verticalPadding = itemHeight * (visibleCount / 2)
 
@@ -64,7 +66,7 @@ fun WheelPicker(
             .distinctUntilChanged()
             .collect { index ->
                 if (index in items.indices && index != currentSelected) {
-                    onSelected(index)
+                    currentOnSelected(index)
                 }
             }
     }

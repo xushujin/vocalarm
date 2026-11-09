@@ -215,7 +215,8 @@ fun AlarmEditScreen(
                 item {
                     TimeCard(
                         draft = draft,
-                        onTimeChange = viewModel::setTime,
+                        onHourChange = viewModel::setHour,
+                        onMinuteChange = viewModel::setMinute,
                         onLabelChange = viewModel::setLabel,
                     )
                 }
@@ -390,7 +391,12 @@ private fun EditorTopBar(
 }
 
 @Composable
-private fun TimeCard(draft: AlarmDraft, onTimeChange: (Int, Int) -> Unit, onLabelChange: (String) -> Unit) {
+private fun TimeCard(
+    draft: AlarmDraft,
+    onHourChange: (Int) -> Unit,
+    onMinuteChange: (Int) -> Unit,
+    onLabelChange: (String) -> Unit,
+) {
     val palette = LocalPalette.current
     NeuCard(modifier = Modifier.fillMaxWidth(), radius = 30.dp, depth = 10.dp) {
         Column {
@@ -411,8 +417,8 @@ private fun TimeCard(draft: AlarmDraft, onTimeChange: (Int, Int) -> Unit, onLabe
             TimeWheel(
                 hour = draft.hour,
                 minute = draft.minute,
-                onHourChange = { hour -> onTimeChange(hour, draft.minute) },
-                onMinuteChange = { minute -> onTimeChange(draft.hour, minute) },
+                onHourChange = onHourChange,
+                onMinuteChange = onMinuteChange,
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(6.dp))
