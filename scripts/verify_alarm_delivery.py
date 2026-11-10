@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the real AlarmManager -> FGS -> window path on a disposable API 34+ emulator.
+"""Exercise real broadcast/service delivery and launcher recovery on a disposable API 34+ emulator.
 
 Install app-debug.apk first. This replaces ONLY com.vocalarm.app.debug's alarm/settings fixtures
 on the named emulator. No instrumentation or broadcast is used to fire the alarm. Reports are
@@ -24,11 +24,14 @@ def main():
     parser.add_argument("--serial", required=True)
     parser.add_argument("--scenario", choices=["locked", "unlocked"], required=True)
     parser.add_argument("--kind", choices=["Regular", "Snooze", "Test"], default="Test")
+    parser.add_argument("--delivery", choices=["primary", "fallback"], default="primary")
+    parser.add_argument("--cleanup", choices=["kill", "force-stop"], default="kill")
     args = parser.parse_args()
     if not re.fullmatch(r"emulator-\d+", args.serial):
         parser.error("Use a disposable emulator, never a physical device with personal alarm data.")
-    report = ROOT / "app/build/alarm-verification" / f"{args.scenario}-{args.kind}"
+    report = ROOT / "app/build/alarm-verification" / f"{args.scenario}-{args.kind}-{args.delivery}-{args.cleanup}"
     report.mkdir(parents=True, exist_ok=True)
+    reopened_at = 0
 
     def adb(*command, data=None, check=True):
         result = subprocess.run(
@@ -46,11 +49,12 @@ def main():
 
     def read_log():
         raw = shell("run-as", PACKAGE, "cat", "files/trigger.log", check=False)
-        return {k: int(v) for k, v in re.findall(r"^(\w+)=(\d+)$", raw, re.MULTILINE)}
+        return {k: int(v) if v.isdecimal() else v for k, v in re.findall(r"^(\w+)=(.*)$", raw, re.MULTILINE)}
 
     try:
         assert int(shell("getprop", "ro.build.version.sdk")) >= 34, "Use an API 34+ emulator"
         shell("am", "force-stop", PACKAGE)
+        shell("run-as", PACKAGE, "pm", "enable", PACKAGE + "/com.vocalarm.app.alarm.AlarmReceiver")
         shell("dumpsys", "deviceidle", "unforce")
         shell("input", "keyevent", "KEYCODE_WAKEUP")
         shell("wm", "dismiss-keyguard")
@@ -86,13 +90,18 @@ def main():
         (report / "registered-alarms.txt").write_text(alarms)
         assert re.search(PACKAGE + r".*(?:startForegroundService|foregroundService)", alarms, re.I), \
             "AlarmManager must own a foreground-service PendingIntent"
+        assert re.search(PACKAGE + r".*broadcastIntent", alarms, re.I), \
+            "AlarmManager must own the primary broadcast PendingIntent"
+
+        if args.delivery == "fallback":
+            shell("run-as", PACKAGE, "pm", "disable", PACKAGE + "/com.vocalarm.app.alarm.AlarmReceiver")
 
         # Remove the recent task with a real swipe, then ensure even the cached process is gone.
         shell("input", "keyevent", "KEYCODE_APP_SWITCH")
         time.sleep(2)
         shell("input", "swipe", "540", "1200", "540", "150", "350")
         shell("input", "keyevent", "KEYCODE_HOME")
-        shell("am", "kill", PACKAGE)
+        shell("am", "kill" if args.cleanup == "kill" else "force-stop", PACKAGE)
         pid = shell("pidof", PACKAGE, check=False)
         if pid:
             shell("run-as", PACKAGE, "kill", "-9", *pid.split())
@@ -103,7 +112,18 @@ def main():
             shell("dumpsys", "deviceidle", "force-idle")
         else:
             shell("am", "start", "-W", "-a", "android.settings.SETTINGS")
-        print(f"{args.scenario}/{args.kind}: task swiped, process {old_pid} gone, waiting for system deadline", flush=True)
+        print(f"{args.scenario}/{args.kind}/{args.delivery}/{args.cleanup}: process {old_pid} gone, waiting for system deadline", flush=True)
+
+        if args.cleanup == "force-stop":
+            while int(shell("date", "+%s")) * 1000 < deadline + 5_000:
+                time.sleep(2)
+            assert read_log().get("deliveredAt", 0) == 0, "Force-stop should cancel both delivery paths"
+            shell("dumpsys", "deviceidle", "unforce")
+            shell("input", "keyevent", "KEYCODE_WAKEUP")
+            shell("wm", "dismiss-keyguard")
+            reopened_at = int(shell("date", "+%s")) * 1000
+            shell("am", "start", "-W", "-n", PACKAGE + "/com.vocalarm.app.ui.MainActivity")
+            print("Force-stop prevented delivery; reopening must be recorded as overdue recovery", flush=True)
 
         timeout = time.monotonic() + 75
         snapshot = {}
@@ -112,6 +132,8 @@ def main():
             if snapshot.get("screenShownAt", 0) >= deadline:
                 break
             time.sleep(2)
+        time.sleep(3)
+        snapshot = read_log()
         window = shell("dumpsys", "window", "windows")
         media = shell("dumpsys", "media.audio_flinger")
         notifications = shell("dumpsys", "notification", "--noredact")
@@ -122,13 +144,25 @@ def main():
         (report / "screen.png").write_bytes(adb("exec-out", "screencap", "-p"))
         result = {
             "scenario": args.scenario, "kind": args.kind, "scheduledAt": deadline,
+            "delivery": args.delivery, "cleanup": args.cleanup,
+            "appReopenedAt": reopened_at,
             "oldPid": old_pid, "newPid": new_pid, "triggerLog": snapshot,
             "deliveryDelayMs": snapshot.get("deliveredAt", 0) - deadline,
         }
         (report / "result.json").write_text(json.dumps(result, indent=2))
         assert new_pid and new_pid != old_pid, result
         assert snapshot.get("ringingAt", 0) >= deadline, result
-        assert 0 <= result["deliveryDelayMs"] < 15_000, result
+        if args.cleanup == "kill":
+            assert 0 <= result["deliveryDelayMs"] < 15_000, result
+            assert snapshot.get("recoveryAt", 0) == 0, "Cold delivery must not re-register the in-flight alarm"
+            assert snapshot.get("deliverySource") == ("Service" if args.delivery == "fallback" else "Broadcast"), result
+        else:
+            assert snapshot.get("recoveredScheduledAt") == deadline, result
+            assert snapshot.get("recoveryAt", 0) >= reopened_at > deadline, result
+            assert snapshot.get("appOpenedAt", 0) >= reopened_at, result
+            assert snapshot.get("deliveredAt", 0) >= snapshot["recoveryAt"], result
+        assert snapshot.get("scheduledAt") == deadline, result
+        assert snapshot.get("deliveredCount") == 1 and snapshot.get("ringingCount") == 1, "Duplicate alarm played"
         assert snapshot.get("screenShownAt", 0) >= deadline, "No focused full-screen window: " + str(result)
         assert "AlarmRingActivity" in window, "Missing ringing window"
         print(json.dumps(result, indent=2), flush=True)
@@ -137,6 +171,7 @@ def main():
         (report / "logcat.txt").write_bytes(adb("logcat", "-d", check=False))
         shell("dumpsys", "deviceidle", "unforce", check=False)
         shell("am", "force-stop", PACKAGE, check=False)
+        shell("run-as", PACKAGE, "pm", "enable", PACKAGE + "/com.vocalarm.app.alarm.AlarmReceiver", check=False)
 
 
 if __name__ == "__main__":

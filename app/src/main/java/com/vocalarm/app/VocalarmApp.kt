@@ -14,9 +14,8 @@ class VocalarmApp : Application() {
         super.onCreate()
         container = AppContainer(this)
         NotificationChannels.ensure(this)
-        // Re-arm every enabled alarm: after a force stop or a data restore the system may not hold
-        // any PendingIntent even though the alarm is still enabled in the file.
-        container.scheduler.rescheduleAll()
+        // Do not replace alarms while the OS is starting this process to deliver one. Recovery is
+        // explicit in the launcher, boot/clock receiver, task-removal callback and watchdog.
         // Best-effort repair when the OS permits background jobs. Neither this job nor a
         // foreground service can bypass force-stop or vendor auto-start restrictions.
         AlarmWatchdog.schedule(this)

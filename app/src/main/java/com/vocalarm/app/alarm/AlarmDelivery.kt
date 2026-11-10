@@ -5,7 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import com.vocalarm.app.data.AlarmOccurrenceKind
 
-/** Identity shared by system delivery and the legacy broadcast handoff. */
+/** Identity shared by direct system delivery and the broadcast-to-service handoff. */
 data class AlarmDelivery(val alarmId: String, val kind: AlarmOccurrenceKind, val token: String) {
     fun serviceIntent(context: Context): Intent = serviceIntent(context, alarmId, kind).apply {
         putExtra(EXTRA_TOKEN, token)

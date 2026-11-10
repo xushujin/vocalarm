@@ -54,8 +54,16 @@ class AlarmService : Service() {
         val action = intent?.action
         when (action) {
             AlarmDelivery.ACTION_DELIVER -> {
-                container.triggerLog.recordDelivered()
                 val delivery = AlarmDelivery.from(intent)
+                delivery?.let { received ->
+                    container.scheduler.pendingOccurrence(received.alarmId, received.kind, received.token)?.let {
+                        container.triggerLog.recordDelivered(
+                            token = received.token,
+                            scheduledAt = it.triggerAtMillis,
+                            source = TriggerLog.DeliverySource.Service,
+                        )
+                    }
+                }
                 val accepted = delivery != null && container.scheduler.consume(
                     delivery.alarmId, delivery.kind, delivery.token,
                 )
@@ -128,6 +136,7 @@ class AlarmService : Service() {
         vibrator?.cancel()
         releaseWakeLock()
         activeAlarm = alarm
+        AlarmReceiver.clearStartFailure(this)
         ringScreenShown = false
         container.ringing.start(alarm, isSnooze)
         container.triggerLog.recordRinging()

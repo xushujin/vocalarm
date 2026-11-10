@@ -169,6 +169,13 @@
     <string name="about_section_permissions">权限说明</string>
     <string name="about_section_diagnostics">闹钟自检</string>
     <string name="diag_device">当前设备</string>
+    <string name="diag_copy_report">复制闹钟排查信息</string>
+    <string name="diag_report_copied">已复制设备、触发时间和进程退出记录，不含录音或闹钟文字</string>
+    <string name="diag_last_planned">上次提醒原定时间</string>
+    <string name="diag_delivery_delay">上次投递延迟</string>
+    <string name="diag_delay_seconds">%1$d 秒</string>
+    <string name="diag_recovered_after_open">%1$s 打开应用后，重新登记了原定 %2$s 的过时提醒。随后响铃属于恢复后的补响，不能据此判断清理后台后的准时提醒正常。</string>
+    <string name="diag_recovered_other">%1$s 恢复了原定 %2$s 的过时提醒；请核对投递延迟。</string>
     <string name="diag_app_next">已保存的下次提醒（含试响）</string>
     <string name="diag_system_next">设备下一个闹钟（所有应用）</string>
     <string name="diag_none">暂无</string>
@@ -202,7 +209,7 @@
     <string name="guardian_disable">关闭后台守护</string>
     <string name="guardian_title">闹钟守护中</string>
     <string name="guardian_text">帮助维持后台闹钟，请同时允许自启动与后台活动</string>
-    <string name="diag_background_oplus">ColorOS 等 OPPO / 一加 / realme 系统：请允许 Vocalarm 自启动、后台活动和后台弹出界面，并解除电池限制。菜单名称因机型和版本而异；这些开关需手动核对。若清理后系统仍拦截闹钟，可在最近任务中锁定应用。</string>
+    <string name="diag_background_oplus">ColorOS（含 17）：请在系统的应用管理／耗电管理中找到 Vocalarm，核对「允许自启动」和「允许后台活动」；它们与上面的 Android 电池优化豁免不同，应用无法自动确认。\n\n如果只有打开应用才补响，先检查这两项。若均开启仍失效，可临时锁定最近任务中的 Vocalarm，并复制排查信息。后台弹出界面权限只影响页面显示，不能让已被系统禁止唤醒的进程恢复。菜单名称因机型而异。</string>
     <string name="diag_background_generic">请检查 Vocalarm 的自启动、后台运行与电池策略；如提供相关开关，请允许自启动和后台活动，并解除电池限制。也可在最近任务中锁定应用，减少被清理。菜单名称因设备而异；这些开关需手动核对。</string>
     <string name="diag_app_settings">打开应用系统设置</string>
     <string name="diag_settings_unavailable">无法打开设置，请在系统设置中搜索 Vocalarm，检查应用与电池设置。</string>

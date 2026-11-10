@@ -48,9 +48,9 @@ class AppContainer(context: Context) {
 
     val playback = AlarmPlaybackEngine(player, tts)
 
-    val scheduler = AlarmScheduler(appContext, alarmRepository)
-
     val triggerLog = TriggerLog(File(appContext.filesDir, "trigger.log"))
+
+    val scheduler = AlarmScheduler(appContext, alarmRepository, triggerLog)
 
     val ringing = RingingState()
 

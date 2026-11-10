@@ -2,6 +2,8 @@ package com.vocalarm.app.ui.screens
 
 import android.app.AlarmManager
 import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -54,7 +56,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vocalarm.app.AppContainer
 import com.vocalarm.app.BuildConfig
 import com.vocalarm.app.R
+import com.vocalarm.app.alarm.AlarmDiagnostics
 import com.vocalarm.app.alarm.AlarmPresentation
+import com.vocalarm.app.alarm.AlarmScheduler
 import com.vocalarm.app.alarm.GuardianService
 import com.vocalarm.app.alarm.NotificationChannels
 import com.vocalarm.app.ui.Eyebrow
@@ -330,6 +334,10 @@ private fun DiagnosticsCard(container: AppContainer) {
     var deliveredAt by remember { mutableLongStateOf(0L) }
     var ringingAt by remember { mutableLongStateOf(0L) }
     var screenShownAt by remember { mutableLongStateOf(0L) }
+    var scheduledAt by remember { mutableLongStateOf(0L) }
+    var recoveryAt by remember { mutableLongStateOf(0L) }
+    var recoveredScheduledAt by remember { mutableLongStateOf(0L) }
+    var recoveryFromOpen by remember { mutableStateOf(false) }
     var deliveredCount by remember { mutableIntStateOf(0) }
     var exact by remember { mutableStateOf(true) }
     var notifications by remember { mutableStateOf(true) }
@@ -351,6 +359,10 @@ private fun DiagnosticsCard(container: AppContainer) {
         deliveredAt = snapshot.lastDeliveredAt
         ringingAt = snapshot.lastRingingAt
         screenShownAt = snapshot.lastScreenShownAt
+        scheduledAt = snapshot.lastScheduledAt
+        recoveryAt = snapshot.lastRecoveryAt
+        recoveredScheduledAt = snapshot.lastRecoveredScheduledAt
+        recoveryFromOpen = snapshot.lastRecoverySource == AlarmScheduler.RestoreSource.AppOpened.name
         deliveredCount = snapshot.deliveredCount
         appNext = container.scheduler.nextScheduledAt() ?: 0L
         systemNext = alarmManager?.nextAlarmClock?.triggerTime ?: 0L
@@ -389,6 +401,17 @@ private fun DiagnosticsCard(container: AppContainer) {
                 value = "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}",
                 ok = null,
             )
+            NeuButton(
+                text = stringResource(R.string.diag_copy_report),
+                onClick = {
+                    context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
+                        ClipData.newPlainText("Vocalarm", AlarmDiagnostics.report(context, container)),
+                    )
+                    Toast.makeText(context, R.string.diag_report_copied, Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.fillMaxWidth(),
+                height = 42.dp,
+            )
             DiagRow(
                 label = stringResource(R.string.diag_app_next),
                 value = if (appNext > 0L) formatStamp(appNext) else stringResource(R.string.diag_none),
@@ -409,6 +432,29 @@ private fun DiagnosticsCard(container: AppContainer) {
                 },
                 ok = deliveredAt > 0L,
             )
+            DiagRow(
+                label = stringResource(R.string.diag_last_planned),
+                value = if (scheduledAt > 0L) formatStamp(scheduledAt, withSeconds = true) else stringResource(R.string.diag_never),
+                ok = null,
+            )
+            if (scheduledAt > 0L && deliveredAt >= scheduledAt) {
+                DiagRow(
+                    label = stringResource(R.string.diag_delivery_delay),
+                    value = stringResource(R.string.diag_delay_seconds, (deliveredAt - scheduledAt) / 1000L),
+                    ok = null,
+                )
+            }
+            if (recoveryAt > 0L) {
+                Text(
+                    text = stringResource(
+                        if (recoveryFromOpen) R.string.diag_recovered_after_open else R.string.diag_recovered_other,
+                        formatStamp(recoveryAt, withSeconds = true),
+                        formatStamp(recoveredScheduledAt, withSeconds = true),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.danger,
+                )
+            }
             DiagRow(
                 label = stringResource(R.string.diag_last_ringing),
                 value = if (ringingAt > 0L) {

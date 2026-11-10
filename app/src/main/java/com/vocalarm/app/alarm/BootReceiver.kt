@@ -16,6 +16,7 @@ class BootReceiver : BroadcastReceiver() {
         if (action !in HANDLED_ACTIONS) return
         val app = context.applicationContext as? VocalarmApp ?: return
         app.container.scheduler.rescheduleAll(
+            source = AlarmScheduler.RestoreSource.BootOrClockChange,
             recalculate = action == Intent.ACTION_TIME_CHANGED || action == Intent.ACTION_TIMEZONE_CHANGED,
         )
         AlarmWatchdog.schedule(context)

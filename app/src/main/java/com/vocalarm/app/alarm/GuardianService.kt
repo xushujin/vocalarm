@@ -35,7 +35,9 @@ class GuardianService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Restore the same saved deadlines, including snoozes of disabled one-shot definitions.
         runCatching {
-            (application as VocalarmApp).container.scheduler.rescheduleAll()
+            val container = (application as VocalarmApp).container
+            container.triggerLog.recordTaskRemoved()
+            container.scheduler.rescheduleAll(AlarmScheduler.RestoreSource.TaskRemoved)
         }
         super.onTaskRemoved(rootIntent)
     }
@@ -92,6 +94,9 @@ class GuardianService : Service() {
                     context,
                     Intent(context, GuardianService::class.java),
                 )
+            }.onFailure { error ->
+                (context.applicationContext as? VocalarmApp)?.container?.triggerLog
+                    ?.recordFailure("guardianStart", error)
             }
         }
 

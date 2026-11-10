@@ -17,7 +17,7 @@ class AlarmWatchdogJobService : JobService() {
 
     override fun onStartJob(params: JobParameters?): Boolean {
         runCatching {
-            (application as VocalarmApp).container.scheduler.rescheduleAll()
+            (application as VocalarmApp).container.scheduler.rescheduleAll(AlarmScheduler.RestoreSource.Watchdog)
         }
         jobFinished(params, false)
         return false
